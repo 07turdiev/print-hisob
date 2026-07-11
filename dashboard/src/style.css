@@ -1,0 +1,152 @@
+:root {
+  color-scheme: light dark;
+  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  line-height: 1.5;
+
+  --color-bg: #f5f6f8;
+  --color-surface: #ffffff;
+  --color-border: #e1e4e9;
+  --color-text: #1a1d23;
+  --color-text-muted: #666d7a;
+  --color-accent: #2563eb;
+  --color-accent-fg: #ffffff;
+
+  --color-success-bg: #e3f6e8;
+  --color-success-fg: #1b7a3d;
+  --color-warning-bg: #fdf0d5;
+  --color-warning-fg: #a15c00;
+  --color-danger-bg: #fce4e4;
+  --color-danger-fg: #b3261e;
+  --color-muted-bg: #eceef1;
+  --color-muted-fg: #5a6270;
+
+  --shadow-card: 0 1px 3px rgba(20, 22, 30, 0.08);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-bg: #14161a;
+    --color-surface: #1d2026;
+    --color-border: #30343c;
+    --color-text: #eef0f3;
+    --color-text-muted: #9aa1ad;
+    --color-accent: #5b8def;
+    --color-accent-fg: #0b1220;
+
+    --color-success-bg: #143621;
+    --color-success-fg: #4fd07f;
+    --color-warning-bg: #3a2b0d;
+    --color-warning-fg: #f2b84b;
+    --color-danger-bg: #3a1616;
+    --color-danger-fg: #f27b74;
+    --color-muted-bg: #262a31;
+    --color-muted-fg: #8b929e;
+
+    --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.4);
+  }
+}
+
+/* Explicit theme picked via the top bar toggle (overrides the OS preference above). */
+:root[data-theme='light'] {
+  --color-bg: #f5f6f8;
+  --color-surface: #ffffff;
+  --color-border: #e1e4e9;
+  --color-text: #1a1d23;
+  --color-text-muted: #666d7a;
+  --color-accent: #2563eb;
+  --color-accent-fg: #ffffff;
+
+  --color-success-bg: #e3f6e8;
+  --color-success-fg: #1b7a3d;
+  --color-warning-bg: #fdf0d5;
+  --color-warning-fg: #a15c00;
+  --color-danger-bg: #fce4e4;
+  --color-danger-fg: #b3261e;
+  --color-muted-bg: #eceef1;
+  --color-muted-fg: #5a6270;
+
+  --shadow-card: 0 1px 3px rgba(20, 22, 30, 0.08);
+}
+
+:root[data-theme='dark'] {
+  --color-bg: #14161a;
+  --color-surface: #1d2026;
+  --color-border: #30343c;
+  --color-text: #eef0f3;
+  --color-text-muted: #9aa1ad;
+  --color-accent: #5b8def;
+  --color-accent-fg: #0b1220;
+
+  --color-success-bg: #143621;
+  --color-success-fg: #4fd07f;
+  --color-warning-bg: #3a2b0d;
+  --color-warning-fg: #f2b84b;
+  --color-danger-bg: #3a1616;
+  --color-danger-fg: #f27b74;
+  --color-muted-bg: #262a31;
+  --color-muted-fg: #8b929e;
+
+  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.4);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--color-bg);
+  color: var(--color-text);
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+#app {
+  min-height: 100vh;
+}
+
+a {
+  color: var(--color-accent);
+}
+
+.card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  box-shadow: var(--shadow-card);
+  padding: 1rem 1.25rem;
+}
+
+.card h2,
+.card h3 {
+  margin-top: 0;
+}
+
+table {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+th,
+td {
+  text-align: left;
+  padding: 0.5rem 0.65rem;
+  border-bottom: 1px solid var(--color-border);
+  font-size: 0.9rem;
+}
+
+th {
+  color: var(--color-text-muted);
+  font-weight: 600;
+  user-select: none;
+}
+
+input,
+select,
+button {
+  font: inherit;
+  color: inherit;
+}
+
+button {
+  cursor: pointer;
+}

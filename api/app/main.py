@@ -1,0 +1,1058 @@
+import csv
+import io
+import logging
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+from datetime import datetime, timezone
+from urllib.parse import quote
+
+from fastapi import Depends, FastAPI, HTTPException, Query, Response, Security, status
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import APIKeyHeader
+from sqlalchemy import case, exists, func, or_, select, update
+from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.auth import create_access_token, require_user, verify_credentials
+from app.config import settings
+from app.db import Base, engine, get_session
+from app.models import Employee, EmployeeQuota, PrintJob
+from app.periods import Period, PeriodType, period_bounds, period_label
+from app.schemas import (
+    DepartmentRollupOut,
+    EmployeeOut,
+    EmployeeQuotaIn,
+    EmployeeQuotaOut,
+    EmployeeStatOut,
+    EmployeeSyncBatch,
+    EmployeeSyncResult,
+    FailureReasonOut,
+    IngestResult,
+    LoginIn,
+    LoginOut,
+    PrintJobBatch,
+    PrintJobOut,
+    PrinterStatOut,
+    StatsSummaryOut,
+    TimeseriesPointOut,
+    TopItemOut,
+    TopStatsOut,
+)
+
+logger = logging.getLogger(__name__)
+
+# Postgres bitta so'rovda 65535 parametrni qabul qiladi; 11 ustun -> xavfsiz bo'lak.
+CHUNK_SIZE = 500
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    if settings.auto_create_tables:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+    yield
+    await engine.dispose()
+
+
+DESCRIPTION = """
+Ish stantsiyalaridagi agentlardan chop etish hodisalarini qabul qilib PostgreSQL'ga yozadi.
+
+### Ma'lumotlarni qayta ishlash qoidalari
+
+* **Bo'sh satr → `NULL`.** `printerIp: ""` va `reason: ""` bazaga `NULL` bo'lib tushadi.
+* **Vaqt.** `.NET` uslubidagi 7 xonali kasr soniya (`...10.1234567+00:00`) qabul qilinadi
+  va `timestamptz` aniqligiga (6 xona) kesiladi. Mintaqasiz vaqt UTC deb olinadi.
+* **Dublikatlar.** Har hodisa `computer + user + document + printer + timestamp` bo'yicha
+  yagona. Agent o'sha paketni qayta yuborsa takroriy qator qo'shilmaydi — javobda
+  `inserted: 0`, `duplicates: N` ko'rinadi.
+* **Qog'oz sarfi (varaq).** `pages` — jismoniy qog'oz (varaq) soni; agent duplex
+  hisobini o'zi qilib, tayyor holda yuboradi (masalan 3 sahifali duplex hujjat
+  uchun `pages=2`). Statistikada sarf har doim `SUM(pages)` bilan hisoblanadi —
+  serverda qo'shimcha yaxlitlash/bo'lish qilinmaydi. `documentPages` — fayldagi
+  sahifalar soni (varaq emas), faqat ma'lumot uchun saqlanadi. `duplex` — ikki
+  tomonlama chop etilganmi, shuningdek faqat ma'lumot uchun (allaqachon
+  `pages`da hisobga olingan).
+"""
+
+TAGS_METADATA = [
+    {"name": "auth", "description": "Dashboard foydalanuvchisi autentifikatsiyasi (JWT)."},
+    {"name": "print-jobs", "description": "Chop etish hodisalarini yozish va o'qish."},
+    {"name": "employees", "description": "AD (Active Directory) xodimlar sinxronizatsiyasi."},
+    {"name": "quotas", "description": "Xodimlar uchun oylik/choraklik qog'oz kvotalari."},
+    {"name": "stats", "description": "Chorak/oy bo'yicha dashboard statistikasi."},
+    {"name": "service", "description": "Xizmat va baza holatini tekshirish."},
+]
+
+app = FastAPI(
+    title="Printer Hisob API",
+    description=DESCRIPTION,
+    version="1.0.0",
+    openapi_tags=TAGS_METADATA,
+    lifespan=lifespan,
+)
+
+# CORS — dashboard brauzerda boshqa origin'dan (masalan Vite dev serveri) so'rov
+# yuborgani uchun kerak. Mahalliy dev portlari regex bilan, prod manzillari esa
+# CORS_ORIGINS orqali ruxsat etiladi. Bearer token ishlatilgani uchun cookie/credentials shart emas.
+_cors_origins = [o.strip() for o in settings.cors_origins.split(",") if o.strip()]
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_cors_origins,
+    allow_origin_regex=r"https?://(localhost|127\.0\.0\.1)(:\d+)?",
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+api_key_header = APIKeyHeader(
+    name="X-API-Key",
+    auto_error=False,
+    description="Server `API_KEY` bilan ishga tushirilgandagina talab qilinadi.",
+)
+
+UNAUTHORIZED_RESPONSE = {
+    status.HTTP_401_UNAUTHORIZED: {"description": "Noto'g'ri yoki yo'q API kalit"}
+}
+
+USER_UNAUTHORIZED_RESPONSE = {
+    status.HTTP_401_UNAUTHORIZED: {"description": "Token yo'q, yaroqsiz yoki muddati tugagan"}
+}
+
+
+async def require_api_key(key: str | None = Security(api_key_header)) -> None:
+    """API_KEY .env'da o'rnatilgan bo'lsagina tekshiradi.
+
+    Bu **agentlar** (.exe) uchun — dashboard foydalanuvchilari uchun emas.
+    Dashboard endpointlari `require_user` (JWT bearer) bilan himoyalanadi.
+    """
+    if not settings.api_key:
+        return
+    if key != settings.api_key:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Noto'g'ri yoki yo'q API kalit"
+        )
+
+
+async def period_params(
+    period_type: PeriodType = Query(..., description="Davr turi: 'month' yoki 'quarter'"),
+    year: int = Query(..., ge=2000, le=2100, description="Yil, masalan 2026"),
+    period_no: int = Query(
+        ..., description="Oy uchun 1..12, chorak uchun 1..4 (Q1=1..Q4=4)"
+    ),
+) -> Period:
+    """`period_type/year/period_no` query-parametrlaridan `[start, end)` chegarasini hisoblaydi."""
+    try:
+        start, end = period_bounds(period_type, year, period_no)
+    except ValueError as exc:
+        # `status.HTTP_422_UNPROCESSABLE_ENTITY` starlette'da eskirgan; sonni to'g'ridan-to'g'ri ishlatamiz.
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return Period(period_type=period_type, year=year, period_no=period_no, start=start, end=end)
+
+
+def _employee_scope_clause(department: str | None):
+    """`PrintJob.user_name`ni `Employee` jadvali orqali bo'lim bo'yicha
+    filtrlash uchun `EXISTS` sharti quradi. Berilmasa `None` qaytadi
+    (filtr qo'llanmaydi, eski xatti-harakat saqlanadi).
+
+    **Muhim**: bu filtr faol bo'lganda AD'da topilmagan (`unmatched`) login'lar
+    natijadan chiqib qoladi — ularning bo'limi yo'q, shuning uchun hech qaysi
+    bo'lim bo'yicha filtrga mos kelmaydi.
+    """
+    if not department:
+        return None
+    conditions = [Employee.login == PrintJob.user_name, Employee.department == department]
+    # `correlate_except(Employee)`: `departments_stmt`da `Employee` allaqachon
+    # tashqi so'rovga qo'shilgan (outerjoin) bo'lishi mumkin — shunda avtomatik
+    # korrelyatsiya uni ham ichki FROM'dan olib tashlab, bo'sh subquery hosil
+    # qilib qo'yardi. `Employee`ni har doim ichki FROM'da qoldiramiz.
+    inner = select(1).where(*conditions).correlate_except(Employee)
+    return exists(inner)
+
+
+@app.get(
+    "/health",
+    tags=["service"],
+    summary="Xizmat holati",
+    description="Bazaga oddiy so'rov yuborib ulanish tirikligini tekshiradi.",
+)
+async def health(session: AsyncSession = Depends(get_session)) -> dict[str, str]:
+    await session.execute(select(1))
+    return {"status": "ok", "database": "ok"}
+
+
+# ---------------------------------------------------------------------------
+# Dashboard foydalanuvchisi autentifikatsiyasi (JWT)
+# ---------------------------------------------------------------------------
+
+
+@app.post(
+    "/api/auth/login",
+    response_model=LoginOut,
+    tags=["auth"],
+    summary="Dashboard uchun login (JWT token olish)",
+    response_description="Bearer token va uning amal qilish muddati",
+    responses={status.HTTP_401_UNAUTHORIZED: {"description": "Login yoki parol noto'g'ri"}},
+)
+async def login(payload: LoginIn) -> LoginOut:
+    """Login/parolni `.env`dagi (`AUTH_USERNAME`/`AUTH_PASSWORD`) qiymatlar bilan
+    solishtiradi va muvaffaqiyatli bo'lsa JWT bearer token qaytaradi.
+
+    Bu token keyingi so'rovlarda `Authorization: Bearer <token>` sarlavhasi orqali
+    yuboriladi (`require_user`). Bu — agentlar ishlatadigan `X-API-Key`dan butunlay
+    alohida mexanizm.
+    """
+    if not settings.jwt_secret or not settings.auth_password:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Server konfiguratsiyasi to'liq emas: JWT_SECRET yoki AUTH_PASSWORD o'rnatilmagan",
+        )
+    if not verify_credentials(payload.username, payload.password):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Login yoki parol noto'g'ri"
+        )
+    token, expires_in = create_access_token(payload.username)
+    return LoginOut(access_token=token, token_type="bearer", expires_in=expires_in)
+
+
+@app.post(
+    "/api/print-jobs",
+    response_model=IngestResult,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Security(require_api_key)],
+    tags=["print-jobs"],
+    summary="Chop etish hodisalari paketini saqlash",
+    response_description="Qabul qilingan, yozilgan va o'tkazib yuborilgan hodisalar soni",
+    responses=UNAUTHORIZED_RESPONSE,
+)
+async def ingest_print_jobs(
+    batch: PrintJobBatch,
+    session: AsyncSession = Depends(get_session),
+) -> IngestResult:
+    """Bir kompyuterdan kelgan chop etish hodisalarini saqlaydi.
+
+    Har bir hodisa `dedup_key` bo'yicha yagona. Agent tarmoq uzilishidan keyin
+    o'sha paketni qayta yuborsa, takroriy yozuvlar qo'shilmaydi.
+    """
+    received = len(batch.jobs)
+    if received == 0:
+        return IngestResult(computer=batch.computer, received=0, inserted=0, duplicates=0)
+
+    # Paket ichidagi takrorlarni oldindan olib tashlaymiz.
+    rows_by_key: dict[str, dict] = {}
+    for job in batch.jobs:
+        key = job.dedup_key(batch.computer)
+        rows_by_key[key] = {
+            "computer": batch.computer,
+            "user_name": job.user_name,
+            "document": job.document,
+            "printer": job.printer,
+            "printer_ip": job.printer_ip,
+            "pages": job.pages,
+            "document_pages": job.document_pages,
+            "duplex": job.duplex,
+            "printed_at": job.normalized_timestamp(),
+            "success": job.success,
+            "reason": job.reason,
+            "dedup_key": key,
+        }
+
+    rows = list(rows_by_key.values())
+    inserted = 0
+
+    async with session.begin():
+        for start in range(0, len(rows), CHUNK_SIZE):
+            chunk = rows[start : start + CHUNK_SIZE]
+            stmt = (
+                pg_insert(PrintJob)
+                .values(chunk)
+                .on_conflict_do_nothing(index_elements=["dedup_key"])
+            )
+            result = await session.execute(stmt)
+            inserted += result.rowcount or 0
+
+    logger.info(
+        "computer=%s received=%d inserted=%d", batch.computer, received, inserted
+    )
+    return IngestResult(
+        computer=batch.computer,
+        received=received,
+        inserted=inserted,
+        duplicates=received - inserted,
+    )
+
+
+@app.get(
+    "/api/print-jobs",
+    response_model=list[PrintJobOut],
+    dependencies=[Security(require_user)],
+    tags=["print-jobs"],
+    summary="Yozuvlarni filtrlab olish",
+    response_description=(
+        "Eng yangisidan boshlab tartiblangan hodisalar. `X-Total-Count` javob "
+        "sarlavhasida (bir xil filtrlar bilan) sahifalash uchun umumiy son beriladi."
+    ),
+    responses=USER_UNAUTHORIZED_RESPONSE,
+)
+async def list_print_jobs(
+    response: Response,
+    session: AsyncSession = Depends(get_session),
+    computer: str | None = Query(default=None, description="Ish stantsiyasi nomi"),
+    user: str | None = Query(default=None, description="Foydalanuvchi login'i"),
+    printer: str | None = Query(default=None, description="Printer nomi"),
+    success: bool | None = Query(default=None, description="Faqat muvaffaqiyatli/xato"),
+    since: datetime | None = Query(default=None, description="Shu vaqtdan boshlab (ISO-8601)"),
+    until: datetime | None = Query(default=None, description="Shu vaqtgacha, chegara kirmaydi"),
+    limit: int = Query(default=100, ge=1, le=1000),
+    offset: int = Query(default=0, ge=0),
+) -> list[PrintJob]:
+    filters = []
+    if computer:
+        filters.append(PrintJob.computer == computer)
+    if user:
+        filters.append(PrintJob.user_name == user)
+    if printer:
+        filters.append(PrintJob.printer == printer)
+    if success is not None:
+        filters.append(PrintJob.success.is_(success))
+    if since:
+        filters.append(PrintJob.printed_at >= since)
+    if until:
+        filters.append(PrintJob.printed_at < until)
+
+    # Sahifalash uchun umumiy son — bir xil filtrlar bilan, `limit`/`offset`siz.
+    count_stmt = select(func.count()).select_from(PrintJob)
+    if filters:
+        count_stmt = count_stmt.where(*filters)
+    total = (await session.execute(count_stmt)).scalar() or 0
+    response.headers["X-Total-Count"] = str(total)
+
+    stmt = select(PrintJob).order_by(PrintJob.printed_at.desc()).limit(limit).offset(offset)
+    if filters:
+        stmt = stmt.where(*filters)
+
+    return list((await session.scalars(stmt)).all())
+
+
+# ---------------------------------------------------------------------------
+# AD (Active Directory) sinxronizatsiyasi
+# ---------------------------------------------------------------------------
+
+
+@app.post(
+    "/api/ad-sync",
+    response_model=EmployeeSyncResult,
+    dependencies=[Security(require_api_key)],
+    tags=["employees"],
+    summary="AD'dan xodimlar ro'yxatini sinxronlash",
+    response_description="Qabul qilingan, yozilgan va nofaol qilingan xodimlar soni",
+    responses=UNAUTHORIZED_RESPONSE,
+)
+async def sync_employees(
+    batch: EmployeeSyncBatch,
+    session: AsyncSession = Depends(get_session),
+) -> EmployeeSyncResult:
+    """Soatlik AD sinxronizatsiya skripti yuboradigan xodimlar paketini saqlaydi.
+
+    `login` bo'yicha upsert qilinadi, shuning uchun bir xil paketni qayta yuborish
+    xavfsiz (idempotent). `mode="full"` bo'lsa, paketda kelmagan (demak AD'dan
+    o'chirilgan/ishdan bo'shagan) xodimlar `is_active=false` qilinadi.
+    """
+    received = len(batch.employees)
+    now = datetime.now(timezone.utc)
+
+    # Paket ichida bir login ikki marta kelsa, oxirgisini olamiz.
+    rows_by_login: dict[str, dict] = {}
+    for emp in batch.employees:
+        rows_by_login[emp.login] = {
+            "login": emp.login,
+            "full_name": emp.full_name,
+            "department": emp.department,
+            "position": emp.position,
+            "is_active": emp.is_active,
+            "synced_at": now,
+        }
+    rows = list(rows_by_login.values())
+    upserted = 0
+    deactivated = 0
+
+    async with session.begin():
+        for start in range(0, len(rows), CHUNK_SIZE):
+            chunk = rows[start : start + CHUNK_SIZE]
+            stmt = pg_insert(Employee).values(chunk)
+            stmt = stmt.on_conflict_do_update(
+                index_elements=["login"],
+                set_={
+                    "full_name": stmt.excluded.full_name,
+                    "department": stmt.excluded.department,
+                    "position": stmt.excluded.position,
+                    "is_active": stmt.excluded.is_active,
+                    "synced_at": stmt.excluded.synced_at,
+                },
+            )
+            result = await session.execute(stmt)
+            upserted += result.rowcount or 0
+
+        if batch.mode == "full":
+            logins = list(rows_by_login.keys())
+            deactivate_stmt = update(Employee).where(Employee.is_active.is_(True))
+            if logins:
+                deactivate_stmt = deactivate_stmt.where(Employee.login.notin_(logins))
+            deactivate_result = await session.execute(
+                deactivate_stmt.values(is_active=False, synced_at=now)
+            )
+            deactivated = deactivate_result.rowcount or 0
+
+    logger.info(
+        "ad-sync mode=%s received=%d upserted=%d deactivated=%d",
+        batch.mode,
+        received,
+        upserted,
+        deactivated,
+    )
+    return EmployeeSyncResult(
+        mode=batch.mode, received=received, upserted=upserted, deactivated=deactivated
+    )
+
+
+@app.get(
+    "/api/employees",
+    response_model=list[EmployeeOut],
+    dependencies=[Security(require_user)],
+    tags=["employees"],
+    summary="AD'dagi barcha xodimlarni ro'yxatini olish",
+    response_description="Xodimlar (faqat chop etganlar emas — kvota belgilash uchun ham kerak)",
+    responses=USER_UNAUTHORIZED_RESPONSE,
+)
+async def list_employees(
+    session: AsyncSession = Depends(get_session),
+    department: str | None = Query(default=None, description="Bo'lim nomi bo'yicha filtr"),
+    is_active: bool | None = Query(default=None, description="Faqat faol/nofaol xodimlar"),
+    q: str | None = Query(default=None, description="Login yoki F.I.Sh. bo'yicha qidiruv"),
+    limit: int = Query(default=200, ge=1, le=5000),
+    offset: int = Query(default=0, ge=0),
+) -> list[Employee]:
+    """Dashboard'ning "Xodimlar" bo'limi uchun — AD'dagi **barcha** xodimlar, chop
+    etgan-etmaganidan qat'i nazar. Shu ro'yxatdan hali chop etmagan xodimga ham
+    oldindan kvota belgilash mumkin bo'ladi.
+    """
+    stmt = select(Employee).order_by(Employee.login)
+
+    if department:
+        stmt = stmt.where(Employee.department == department)
+    if is_active is not None:
+        stmt = stmt.where(Employee.is_active.is_(is_active))
+    if q:
+        like = f"%{q}%"
+        stmt = stmt.where(or_(Employee.login.ilike(like), Employee.full_name.ilike(like)))
+
+    stmt = stmt.limit(limit).offset(offset)
+    return list((await session.scalars(stmt)).all())
+
+
+# ---------------------------------------------------------------------------
+# Kvotalar
+# ---------------------------------------------------------------------------
+
+
+@app.get(
+    "/api/quotas",
+    response_model=list[EmployeeQuotaOut],
+    dependencies=[Security(require_user)],
+    tags=["quotas"],
+    summary="Kvotalarni filtrlab olish",
+    responses=USER_UNAUTHORIZED_RESPONSE,
+)
+async def list_quotas(
+    session: AsyncSession = Depends(get_session),
+    period_type: PeriodType | None = Query(default=None, description="'month' yoki 'quarter'"),
+    year: int | None = Query(default=None, description="Yil"),
+    period_no: int | None = Query(default=None, description="Oy yoki chorak raqami"),
+    login: str | None = Query(default=None, description="Xodim login'i"),
+    department: str | None = Query(default=None, description="Bo'lim nomi bo'yicha filtr"),
+) -> list[EmployeeQuota]:
+    stmt = select(EmployeeQuota)
+
+    if department:
+        stmt = stmt.join(Employee, Employee.login == EmployeeQuota.login).where(
+            Employee.department == department
+        )
+    if period_type:
+        stmt = stmt.where(EmployeeQuota.period_type == period_type)
+    if year:
+        stmt = stmt.where(EmployeeQuota.year == year)
+    if period_no:
+        stmt = stmt.where(EmployeeQuota.period_no == period_no)
+    if login:
+        stmt = stmt.where(EmployeeQuota.login == login)
+
+    stmt = stmt.order_by(
+        EmployeeQuota.year.desc(), EmployeeQuota.period_no, EmployeeQuota.login
+    )
+    return list((await session.scalars(stmt)).all())
+
+
+@app.put(
+    "/api/quotas",
+    response_model=list[EmployeeQuotaOut],
+    dependencies=[Security(require_user)],
+    tags=["quotas"],
+    summary="Bitta yoki bir nechta kvotani belgilash/yangilash",
+    response_description="Yozilgan/yangilangan kvota qatorlari",
+    responses=USER_UNAUTHORIZED_RESPONSE,
+)
+async def upsert_quotas(
+    payload: EmployeeQuotaIn | list[EmployeeQuotaIn],
+    session: AsyncSession = Depends(get_session),
+) -> list[EmployeeQuota]:
+    """`(login, period_type, year, period_no)` bo'yicha upsert qiladi.
+
+    Bir xil kvotani qayta yuborish xavfsiz — `allocated_pages` shunchaki yangilanadi.
+    """
+    items = payload if isinstance(payload, list) else [payload]
+    if not items:
+        return []
+
+    rows = [
+        {
+            "login": it.login,
+            "period_type": it.period_type,
+            "year": it.year,
+            "period_no": it.period_no,
+            "allocated_pages": it.allocated_pages,
+        }
+        for it in items
+    ]
+
+    saved: list[EmployeeQuota] = []
+    async with session.begin():
+        for start in range(0, len(rows), CHUNK_SIZE):
+            chunk = rows[start : start + CHUNK_SIZE]
+            stmt = pg_insert(EmployeeQuota).values(chunk)
+            stmt = (
+                stmt.on_conflict_do_update(
+                    constraint="uq_employee_quotas_period",
+                    set_={"allocated_pages": stmt.excluded.allocated_pages},
+                )
+                .returning(EmployeeQuota)
+            )
+            result = await session.execute(stmt)
+            saved.extend(result.scalars().all())
+
+    return saved
+
+
+# ---------------------------------------------------------------------------
+# Statistika
+# ---------------------------------------------------------------------------
+
+
+@app.get(
+    "/api/stats/summary",
+    response_model=StatsSummaryOut,
+    dependencies=[Security(require_user)],
+    tags=["stats"],
+    summary="Davr uchun umumiy ko'rsatkichlar",
+    responses=USER_UNAUTHORIZED_RESPONSE,
+)
+async def stats_summary(
+    session: AsyncSession = Depends(get_session),
+    period: Period = Depends(period_params),
+    department: str | None = Query(default=None, description="Bo'lim bo'yicha filtr (Employee jadvali orqali)"),
+) -> StatsSummaryOut:
+    stmt = select(
+        func.coalesce(func.sum(PrintJob.pages), 0).label("total_pages"),
+        func.count().label("total_jobs"),
+        func.coalesce(
+            func.sum(case((PrintJob.success.is_(True), 1), else_=0)), 0
+        ).label("success_jobs"),
+        func.count(func.distinct(PrintJob.printer)).label("active_printers"),
+    ).where(PrintJob.printed_at >= period.start, PrintJob.printed_at < period.end)
+
+    scope = _employee_scope_clause(department)
+    if scope is not None:
+        stmt = stmt.where(scope)
+
+    row = (await session.execute(stmt)).one()
+    total_jobs = row.total_jobs or 0
+    success_rate = (row.success_jobs / total_jobs) if total_jobs else 0.0
+
+    return StatsSummaryOut(
+        period_type=period.period_type,
+        year=period.year,
+        period_no=period.period_no,
+        total_pages=row.total_pages,
+        total_jobs=total_jobs,
+        success_rate=round(success_rate, 4),
+        active_printers=row.active_printers,
+    )
+
+
+@app.get(
+    "/api/stats/employees",
+    response_model=list[EmployeeStatOut],
+    dependencies=[Security(require_user)],
+    tags=["stats"],
+    summary="Har bir xodimning davrdagi sarfi va kvotasi",
+    response_description="Chop etgan har bir login uchun sarf/kvota/qoldiq",
+    responses=USER_UNAUTHORIZED_RESPONSE,
+)
+async def stats_employees(
+    session: AsyncSession = Depends(get_session),
+    period: Period = Depends(period_params),
+    department: str | None = Query(default=None, description="Bo'lim bo'yicha filtr"),
+) -> list[EmployeeStatOut]:
+    """Dashboard'ning asosiy jadvali: davrda chop etgan har bir foydalanuvchi uchun
+    sarflangan sahifalar, unga tegishli kvota va AD holati (faol/nofaol/nomaʼlum).
+
+    AD'da topilmagan (ammo chop etgan) login'lar ham qaytariladi —
+    `matchStatus="unmatched"` bilan belgilanadi, tushirib qoldirilmaydi. **Istisno**:
+    `department` filtri faol bo'lsa, unmatched login'lar (bo'limi
+    yo'qligi sababli) natijadan chiqarib tashlanadi.
+    """
+    return await _employee_stats_rows(session, period, department)
+
+
+async def _employee_stats_rows(
+    session: AsyncSession, period: Period, department: str | None
+) -> list[EmployeeStatOut]:
+    """`/api/stats/employees` va CSV eksport uchun umumiy agregatsiya.
+
+    Har bir SQL agregatsiyasi shu yerda bir marta yoziladi — CSV eksport bu
+    natijalarni faqat bo'lim bo'yicha guruhlab, boshqacha formatda chiqaradi,
+    lekin raqamlar (used/allocated) har doim bir xil manbadan keladi.
+    """
+    usage = (
+        select(
+            PrintJob.user_name.label("login"),
+            func.coalesce(func.sum(PrintJob.pages), 0).label("used"),
+        )
+        .where(PrintJob.printed_at >= period.start, PrintJob.printed_at < period.end)
+        .group_by(PrintJob.user_name)
+        .subquery()
+    )
+
+    stmt = (
+        select(
+            usage.c.login,
+            Employee.full_name,
+            Employee.department,
+            Employee.position,
+            Employee.is_active,
+            usage.c.used,
+            func.coalesce(EmployeeQuota.allocated_pages, 0).label("allocated"),
+        )
+        .select_from(usage)
+        .outerjoin(Employee, Employee.login == usage.c.login)
+        .outerjoin(
+            EmployeeQuota,
+            (EmployeeQuota.login == usage.c.login)
+            & (EmployeeQuota.period_type == period.period_type)
+            & (EmployeeQuota.year == period.year)
+            & (EmployeeQuota.period_no == period.period_no),
+        )
+    )
+    if department:
+        stmt = stmt.where(Employee.department == department)
+    stmt = stmt.order_by(usage.c.used.desc())
+
+    rows = (await session.execute(stmt)).all()
+
+    results: list[EmployeeStatOut] = []
+    for row in rows:
+        if row.is_active is None:
+            match_status = "unmatched"
+        elif row.is_active:
+            match_status = "active"
+        else:
+            match_status = "inactive"
+
+        used = row.used or 0
+        allocated = row.allocated or 0
+        results.append(
+            EmployeeStatOut(
+                login=row.login,
+                full_name=row.full_name,
+                department=row.department,
+                position=row.position,
+                used=used,
+                allocated=allocated,
+                remaining=allocated - used,
+                over_limit=used > allocated,
+                match_status=match_status,
+            )
+        )
+    return results
+
+
+UNMATCHED_SECTION_LABEL = "Noma'lum foydalanuvchilar"
+
+
+@app.get(
+    "/api/stats/employees.csv",
+    dependencies=[Security(require_user)],
+    tags=["stats"],
+    summary="Xodimlar sarfi/kvotasini CSV (KPI hisoboti) shaklida eksport qilish",
+    response_description="Bo'lim bo'yicha guruhlangan CSV fayl (Excel'da ochiladi)",
+    responses=USER_UNAUTHORIZED_RESPONSE,
+)
+async def stats_employees_csv(
+    session: AsyncSession = Depends(get_session),
+    period: Period = Depends(period_params),
+    department: str | None = Query(default=None, description="Bo'lim bo'yicha filtr"),
+) -> Response:
+    """Mijoz talab qilgan KPI hisoboti formatida CSV: bo'lim sarlavhasi, so'ng
+    har bir xodim uchun T/r, F.I.SH., lavozim, davr kvotasi va sarfi.
+
+    Raqamlar `/api/stats/employees` bilan bir xil SQL agregatsiyasidan olinadi
+    (`_employee_stats_rows`) — faqat chiqish formati boshqacha (bo'lim bo'yicha
+    guruhlangan jadval, JSON emas). AD'da topilmagan (unmatched) yoki ishdan
+    bo'shagan (inactive) login'larning sarfi ham ko'rsatiladi, yashirilmaydi.
+    """
+    rows = await _employee_stats_rows(session, period, department)
+
+    label = period_label(period.period_type, period.period_no)
+
+    # Bo'lim bo'yicha guruhlash: `department is None` — AD'da umuman topilmagan
+    # (unmatched) login'lar, alohida "Noma'lum foydalanuvchilar" bo'limiga tushadi.
+    # Ishdan bo'shagan (inactive) xodimlar ham o'z (joriy AD) bo'limida qoladi.
+    by_department: dict[str, list[EmployeeStatOut]] = {}
+    unmatched: list[EmployeeStatOut] = []
+    for row in rows:
+        if row.department:
+            by_department.setdefault(row.department, []).append(row)
+        else:
+            unmatched.append(row)
+
+    buffer = io.StringIO()
+    writer = csv.writer(buffer)
+    writer.writerow(["T/r", "F.I.SH.", "Lavozimi", label, f"Qog'oz sarfi {label}"])
+
+    def _sort_key(row: EmployeeStatOut) -> str:
+        return (row.full_name or row.login).lower()
+
+    for dept_name in sorted(by_department):
+        writer.writerow([dept_name, "", "", "", ""])
+        for idx, row in enumerate(sorted(by_department[dept_name], key=_sort_key), start=1):
+            writer.writerow(
+                [idx, row.full_name or row.login, row.position or "", row.allocated, row.used]
+            )
+
+    if unmatched:
+        writer.writerow([UNMATCHED_SECTION_LABEL, "", "", "", ""])
+        for idx, row in enumerate(sorted(unmatched, key=_sort_key), start=1):
+            writer.writerow(
+                [idx, row.full_name or row.login, row.position or "", row.allocated, row.used]
+            )
+
+    # Excel'da o'zbekcha (lotin, apostrof bilan) harflar to'g'ri ochilishi uchun
+    # UTF-8 BOM qo'shiladi.
+    content = "﻿" + buffer.getvalue()
+
+    filename = f"KPI qog'oz sarfi {period.year} {label}.csv"
+    ascii_filename = filename.encode("ascii", "ignore").decode("ascii") or "kpi.csv"
+    disposition = (
+        f'attachment; filename="{ascii_filename}"; '
+        f"filename*=UTF-8''{quote(filename)}"
+    )
+
+    return Response(
+        content=content.encode("utf-8"),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": disposition},
+    )
+
+
+@app.get(
+    "/api/stats/timeseries",
+    response_model=list[TimeseriesPointOut],
+    dependencies=[Security(require_user)],
+    tags=["stats"],
+    summary="Davr ichida kunlik sahifalar dinamikasi",
+    responses=USER_UNAUTHORIZED_RESPONSE,
+)
+async def stats_timeseries(
+    session: AsyncSession = Depends(get_session),
+    period: Period = Depends(period_params),
+    department: str | None = Query(default=None, description="Bo'lim bo'yicha filtr (Employee jadvali orqali)"),
+) -> list[TimeseriesPointOut]:
+    # Muhim: `date_trunc` sessiya `TimeZone`siga (masalan Asia/Tashkent) bog'liq bo'lmasligi
+    # uchun kun chegarasi aniq UTC bo'yicha hisoblanadi (printed_at UTC sifatida saqlanadi).
+    bucket = func.date_trunc("day", PrintJob.printed_at, "UTC").label("bucket")
+    stmt = (
+        select(
+            bucket,
+            func.coalesce(func.sum(PrintJob.pages), 0).label("pages"),
+            func.count().label("jobs"),
+        )
+        .where(PrintJob.printed_at >= period.start, PrintJob.printed_at < period.end)
+        .group_by(bucket)
+        .order_by(bucket)
+    )
+    scope = _employee_scope_clause(department)
+    if scope is not None:
+        stmt = stmt.where(scope)
+
+    rows = (await session.execute(stmt)).all()
+    return [
+        TimeseriesPointOut(date=row.bucket.date().isoformat(), pages=row.pages, jobs=row.jobs)
+        for row in rows
+    ]
+
+
+@app.get(
+    "/api/stats/top",
+    response_model=TopStatsOut,
+    dependencies=[Security(require_user)],
+    tags=["stats"],
+    summary="Eng ko'p sahifa chop etgan printerlar/kompyuterlar/bo'limlar",
+    responses=USER_UNAUTHORIZED_RESPONSE,
+)
+async def stats_top(
+    session: AsyncSession = Depends(get_session),
+    period: Period = Depends(period_params),
+    limit: int = Query(default=10, ge=1, le=100),
+    department: str | None = Query(default=None, description="Bo'lim bo'yicha filtr (Employee jadvali orqali)"),
+) -> TopStatsOut:
+    period_filter = (PrintJob.printed_at >= period.start, PrintJob.printed_at < period.end)
+    scope = _employee_scope_clause(department)
+
+    printers_stmt = (
+        select(
+            PrintJob.printer.label("name"),
+            func.coalesce(func.sum(PrintJob.pages), 0).label("pages"),
+            func.count().label("jobs"),
+        )
+        .where(*period_filter)
+        .group_by(PrintJob.printer)
+        .order_by(func.sum(PrintJob.pages).desc())
+        .limit(limit)
+    )
+    computers_stmt = (
+        select(
+            PrintJob.computer.label("name"),
+            func.coalesce(func.sum(PrintJob.pages), 0).label("pages"),
+            func.count().label("jobs"),
+        )
+        .where(*period_filter)
+        .group_by(PrintJob.computer)
+        .order_by(func.sum(PrintJob.pages).desc())
+        .limit(limit)
+    )
+    department_label = func.coalesce(Employee.department, "Noma'lum bo'lim").label("name")
+    departments_stmt = (
+        select(
+            department_label,
+            func.coalesce(func.sum(PrintJob.pages), 0).label("pages"),
+            func.count().label("jobs"),
+        )
+        .select_from(PrintJob)
+        .outerjoin(Employee, Employee.login == PrintJob.user_name)
+        .where(*period_filter)
+        .group_by(department_label)
+        .order_by(func.sum(PrintJob.pages).desc())
+        .limit(limit)
+    )
+
+    if scope is not None:
+        printers_stmt = printers_stmt.where(scope)
+        computers_stmt = computers_stmt.where(scope)
+        departments_stmt = departments_stmt.where(scope)
+
+    printers = (await session.execute(printers_stmt)).all()
+    computers = (await session.execute(computers_stmt)).all()
+    departments = (await session.execute(departments_stmt)).all()
+
+    return TopStatsOut(
+        printers=[TopItemOut(name=r.name, pages=r.pages, jobs=r.jobs) for r in printers],
+        computers=[TopItemOut(name=r.name, pages=r.pages, jobs=r.jobs) for r in computers],
+        departments=[TopItemOut(name=r.name, pages=r.pages, jobs=r.jobs) for r in departments],
+    )
+
+
+@app.get(
+    "/api/stats/printers",
+    response_model=list[PrinterStatOut],
+    dependencies=[Security(require_user)],
+    tags=["stats"],
+    summary="Har bir printer bo'yicha davr statistikasi",
+    response_description="Barcha printerlar (faqat top-N emas), sahifalar bo'yicha kamayish tartibida",
+    responses=USER_UNAUTHORIZED_RESPONSE,
+)
+async def stats_printers(
+    session: AsyncSession = Depends(get_session),
+    period: Period = Depends(period_params),
+) -> list[PrinterStatOut]:
+    """`/api/stats/top`dagi "eng ko'p N ta printer"dan farqli o'laroq, davrda
+    ishlatilgan **barcha** printerlarni (muvaffaqiyat foizi va xatolar soni bilan
+    birga) qaytaradi — printerlar sahifasi uchun.
+    """
+    stmt = (
+        select(
+            PrintJob.printer.label("name"),
+            func.coalesce(func.sum(PrintJob.pages), 0).label("pages"),
+            func.count().label("jobs"),
+            func.coalesce(
+                func.sum(case((PrintJob.success.is_(True), 1), else_=0)), 0
+            ).label("success_jobs"),
+            func.coalesce(
+                func.sum(case((PrintJob.success.is_(False), 1), else_=0)), 0
+            ).label("failed_jobs"),
+        )
+        .where(PrintJob.printed_at >= period.start, PrintJob.printed_at < period.end)
+        .group_by(PrintJob.printer)
+        .order_by(func.sum(PrintJob.pages).desc())
+    )
+    rows = (await session.execute(stmt)).all()
+
+    results: list[PrinterStatOut] = []
+    for row in rows:
+        jobs = row.jobs or 0
+        success_jobs = row.success_jobs or 0
+        success_rate = (success_jobs / jobs) if jobs else 0.0
+        results.append(
+            PrinterStatOut(
+                name=row.name,
+                pages=row.pages,
+                jobs=jobs,
+                success_rate=round(success_rate, 4),
+                failed_jobs=row.failed_jobs or 0,
+            )
+        )
+    return results
+
+
+@app.get(
+    "/api/stats/failures",
+    response_model=list[FailureReasonOut],
+    dependencies=[Security(require_user)],
+    tags=["stats"],
+    summary="Muvaffaqiyatsiz chop etishlar sabab bo'yicha",
+    responses=USER_UNAUTHORIZED_RESPONSE,
+)
+async def stats_failures(
+    session: AsyncSession = Depends(get_session),
+    period: Period = Depends(period_params),
+    department: str | None = Query(default=None, description="Bo'lim bo'yicha filtr (Employee jadvali orqali)"),
+) -> list[FailureReasonOut]:
+    reason_label = func.coalesce(PrintJob.reason, "Sabab ko'rsatilmagan").label("reason")
+    stmt = (
+        select(reason_label, func.count().label("count"))
+        .where(
+            PrintJob.printed_at >= period.start,
+            PrintJob.printed_at < period.end,
+            PrintJob.success.is_(False),
+        )
+        .group_by(reason_label)
+        .order_by(func.count().desc())
+    )
+    scope = _employee_scope_clause(department)
+    if scope is not None:
+        stmt = stmt.where(scope)
+
+    rows = (await session.execute(stmt)).all()
+    return [FailureReasonOut(reason=row.reason, count=row.count) for row in rows]
+
+
+@app.get(
+    "/api/stats/departments",
+    response_model=list[DepartmentRollupOut],
+    dependencies=[Security(require_user)],
+    tags=["stats"],
+    summary="Bo'lim kesimida davr yig'indisi",
+    response_description="Har bir bo'lim uchun: sahifalar, ishlar, xodimlar soni, kvota yig'indisi",
+    responses=USER_UNAUTHORIZED_RESPONSE,
+)
+async def stats_departments(
+    session: AsyncSession = Depends(get_session),
+    period: Period = Depends(period_params),
+) -> list[DepartmentRollupOut]:
+    """Ko'chirish (transfer) hisobotlari uchun: har bir bo'lim bo'yicha
+    davrdagi sarf **joriy** AD tuzilishi bo'yicha hisoblanadi (so'rov vaqtida
+    `Employee.department`ga qo'shiladi — tarixiy emas).
+
+    Faqat chop etganlar emas — **barcha faol xodimlar** hisobga olinadi
+    (`employeeCount`, `totalAllocated` shu tarzda to'g'ri chiqadi).
+    """
+    return await _department_rollup(session, period)
+
+
+async def _department_rollup(session: AsyncSession, period: Period) -> list[DepartmentRollupOut]:
+    """`Employee.department` bo'yicha davr uchun to'liq agregatsiya: sahifalar/ishlar
+    (chop etilgan), faol xodimlar soni va kvotalar yig'indisi. Barcha agregatsiya
+    SQL tomonda amalga oshiriladi.
+    """
+    column = Employee.department
+    names = select(column.label("name")).where(column.isnot(None)).distinct().subquery()
+
+    employee_counts = (
+        select(column.label("name"), func.count().label("employee_count"))
+        .where(column.isnot(None), Employee.is_active.is_(True))
+        .group_by(column)
+        .subquery()
+    )
+
+    quota_totals = (
+        select(
+            column.label("name"),
+            func.coalesce(func.sum(EmployeeQuota.allocated_pages), 0).label("total_allocated"),
+        )
+        .select_from(EmployeeQuota)
+        .join(Employee, Employee.login == EmployeeQuota.login)
+        .where(
+            column.isnot(None),
+            EmployeeQuota.period_type == period.period_type,
+            EmployeeQuota.year == period.year,
+            EmployeeQuota.period_no == period.period_no,
+        )
+        .group_by(column)
+        .subquery()
+    )
+
+    pages_totals = (
+        select(
+            column.label("name"),
+            func.coalesce(func.sum(PrintJob.pages), 0).label("pages"),
+            func.count().label("jobs"),
+        )
+        .select_from(PrintJob)
+        .join(Employee, Employee.login == PrintJob.user_name)
+        .where(
+            column.isnot(None),
+            PrintJob.printed_at >= period.start,
+            PrintJob.printed_at < period.end,
+        )
+        .group_by(column)
+        .subquery()
+    )
+
+    stmt = (
+        select(
+            names.c.name,
+            func.coalesce(pages_totals.c.pages, 0).label("pages"),
+            func.coalesce(pages_totals.c.jobs, 0).label("jobs"),
+            func.coalesce(employee_counts.c.employee_count, 0).label("employee_count"),
+            func.coalesce(quota_totals.c.total_allocated, 0).label("total_allocated"),
+        )
+        .select_from(names)
+        .outerjoin(pages_totals, pages_totals.c.name == names.c.name)
+        .outerjoin(employee_counts, employee_counts.c.name == names.c.name)
+        .outerjoin(quota_totals, quota_totals.c.name == names.c.name)
+        .order_by(func.coalesce(pages_totals.c.pages, 0).desc())
+    )
+    rows = (await session.execute(stmt)).all()
+
+    results: list[DepartmentRollupOut] = []
+    for row in rows:
+        used = row.pages or 0
+        allocated = row.total_allocated or 0
+        results.append(
+            DepartmentRollupOut(
+                name=row.name,
+                pages=used,
+                jobs=row.jobs or 0,
+                employee_count=row.employee_count or 0,
+                total_allocated=allocated,
+                remaining=allocated - used,
+                over_limit=used > allocated,
+            )
+        )
+    return results
