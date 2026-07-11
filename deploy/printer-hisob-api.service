@@ -1,0 +1,29 @@
+# Printer Hisob backend (FastAPI) — systemd service
+# O'rnatish:
+#   sudo cp deploy/printer-hisob-api.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now printer-hisob-api
+# Loglar:  journalctl -u printer-hisob-api -f
+#
+# Eslatma: User va yo'llarni o'z serveringizga moslang (bu yerda user=user, home=/home/user).
+
+[Unit]
+Description=Printer Hisob API (FastAPI/uvicorn)
+After=network.target postgresql.service
+Wants=postgresql.service
+
+[Service]
+Type=simple
+User=user
+Group=user
+WorkingDirectory=/home/user/print-hisob/api
+# .env pydantic-settings tomonidan WorkingDirectory'dan avtomatik o'qiladi.
+ExecStart=/home/user/print-hisob/api/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000 --workers 2
+Restart=always
+RestartSec=3
+# Xavfsizlik (ixtiyoriy, lekin tavsiya etiladi)
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
