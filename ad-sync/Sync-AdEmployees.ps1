@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Active Directory'dan xodimlarni o'qib, Printer Hisob API'ga (POST /api/ad-sync) yuboradi.
 
