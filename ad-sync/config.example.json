@@ -1,12 +1,13 @@
 {
   "ApiUrl": "https://print.madaniyhayot.uz/api/ad-sync",
-  "ApiKey": "BU_YERGA_serverdagi_api/.env_DAGI_API_KEY",
+  "ApiKey": ".env_API_KEY",
 
   "AdServer": "192.168.200.5",
   "SearchBase": "OU=Madaniyat vazirligi,DC=madaniyat,DC=local",
 
   "DepartmentSource": "OU",
   "PositionSource": "Description",
+  "UseAdEnabledFlag": false,
 
   "Mode": "full",
   "MinEmployees": 10,

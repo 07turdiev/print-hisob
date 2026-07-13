@@ -11,7 +11,18 @@ o'qib, Printer Hisob API'ga (`POST /api/ad-sync`) yuboradi. Har soatda Task Sche
 | `fullName` | `DisplayName` (bo'sh bo'lsa `Name`) | F.I.SH. |
 | `department` | **OU nomi** (xodim turgan bo'lim) | masalan `Ichki audit bo'limi` |
 | `position` | **`Description`** | masalan `Bosh mutaxassis` |
-| `active` | `Enabled` | Ketgan xodim → `false` |
+| `active` | **har doim `true`** | AD'da mavjud = ishlayapti (pastga qarang) |
+
+## Ketgan / yangi kelgan xodimlarni aniqlash
+AD'dagi `Enabled` bayrog'i **ishlatilmaydi** (bu tashkilotда ko'p akkaunt `Disabled`, lekin
+xodimlar ishlayapti). Buning o'rniga **snapshot farqi** ishlatiladi:
+
+- AD'da **bor** → `active: true`
+- Oldin bazada bor edi, lekin yangi ro'yxatda **yo'q** → backend uni **`is_active=false`** (ketgan) qiladi
+- Yangi login paydo bo'ldi → **yangi kelgan** (upsert)
+
+Bu `Mode: "full"` tufayli avtomatik ishlaydi. Agar kelajakda AD'ning `Enabled` bayrog'i
+ishonchli bo'lsa, `config.json` da `"UseAdEnabledFlag": true` qiling.
 
 Sizning AD'ingizda xodimlar **bo'lim nomi bilan atalgan OU'larда** joylashgan va lavozim
 **Description** maydoniga yozilgan — shuning uchun standart shunday.

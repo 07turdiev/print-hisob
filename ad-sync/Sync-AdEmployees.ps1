@@ -76,8 +76,13 @@ try {
     $minEmployees = if ($cfg.MinEmployees) { [int]$cfg.MinEmployees } else { 5 }
     $deptSource   = if ($cfg.DepartmentSource) { $cfg.DepartmentSource } else { 'OU' }
     $posSource    = if ($cfg.PositionSource)   { $cfg.PositionSource }   else { 'Description' }
+    # AD'dagi Enabled bayrog'i bu tashkilotда ishonchli emas (ko'p akkaunt Disabled, lekin
+    # xodimlar ishlayapti). Standart: AD'da MAVJUD = faol. Ketgan/kelgan aniqlash
+    # `mode=full` snapshot farqi orqali bo'ladi (ro'yxatda yo'q -> backend is_active=false qiladi).
+    $useAdEnabled = if ($null -ne $cfg.UseAdEnabledFlag) { [bool]$cfg.UseAdEnabledFlag } else { $false }
 
-    Write-Log "Boshlandi. AD=$($cfg.AdServer) mode=$mode dept=$deptSource pos=$posSource preview=$Preview"
+    Write-Log ("Boshlandi. AD=$($cfg.AdServer) mode=$mode dept=$deptSource pos=$posSource " +
+               "useAdEnabled=$useAdEnabled preview=$Preview")
 
     # -----------------------------------------------------------------------
     # 2. ActiveDirectory moduli
@@ -123,12 +128,16 @@ try {
             $position = if ($posSource -eq 'Title') { [string]$u.Title }
                         else { [string]$u.Description }
 
+            # AD'da mavjud bo'lsa — faol. (Ketganlar AD'dan o'chiriladi va `mode=full`
+            # snapshot'ida bo'lmaydi -> backend ularni is_active=false qiladi.)
+            $isActive = if ($useAdEnabled) { [bool]$u.Enabled } else { $true }
+
             [pscustomobject]@{
                 login      = [string]$u.SamAccountName
                 fullName   = [string]$fullName
                 department = [string]$department
                 position   = [string]$position
-                active     = [bool]$u.Enabled
+                active     = $isActive
             }
         }
     )
