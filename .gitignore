@@ -1,3 +1,7 @@
 /KPI qog'oz oxirgi sarfi 2026 2-chorak.xlsx
 /scratch_xlsx_dump.txt
 /scratch_xlsx_dump2.txt
+
+# AD sync — API kalit va loglar repoga tushmasin
+ad-sync/config.json
+ad-sync/ad-sync.log
