@@ -467,6 +467,109 @@ class EmployeeOut(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Agent (.exe) sog'lik signali (heartbeat)
+# ---------------------------------------------------------------------------
+
+
+class AgentStatusIn(BaseModel):
+    """`POST /api/agent-status` tanasi — agent davriy yuboradigan sog'lik signali.
+
+    Bitta kompyuter uchun bitta hisobot; bazada shu kompyuter bo'yicha eng
+    so'nggi qiymatlar bilan ustiga yoziladi (tarix saqlanmaydi).
+    """
+
+    model_config = ConfigDict(
+        populate_by_name=True,
+        json_schema_extra={
+            "examples": [
+                {
+                    "computer": "DESKTOP-20DJFSC",
+                    "username": "Sarvar Mamatqulov",
+                    "version": "1.4.6.0",
+                    "working": True,
+                    "detail": "",
+                    "timestamp": "2026-07-13T10:22:31Z",
+                }
+            ]
+        },
+    )
+
+    computer: _text(255)
+    # Windows displey nomi ("Sarvar Mamatqulov"), AD login emas — `Employee`ga
+    # bog'lanmaydi, faqat ma'lumot sifatida saqlanadi.
+    username: _optional_text(255) = None
+    version: _optional_text(50) = None
+    working: bool
+    # Xato/holat matni. Bo'sh satr ("") NULL sifatida saqlanadi.
+    detail: _optional_text(4096) = None
+    # .NET 7 xonali kasr soniya yoki oddiy "...Z" formatida qabul qilinadi.
+    timestamp: datetime
+
+    def normalized_timestamp(self) -> datetime:
+        """Vaqt mintaqasi ko'rsatilmagan bo'lsa UTC deb hisoblaymiz."""
+        if self.timestamp.tzinfo is None:
+            return self.timestamp.replace(tzinfo=timezone.utc)
+        return self.timestamp
+
+
+class AgentStatusResult(BaseModel):
+    model_config = ConfigDict(
+        json_schema_extra={"examples": [{"computer": "DESKTOP-20DJFSC", "status": "ok"}]}
+    )
+
+    computer: str
+    status: str = "ok"
+
+
+class AgentOut(BaseModel):
+    """`GET /api/agents` javobidagi bitta qator."""
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "examples": [
+                {
+                    "computer": "DESKTOP-20DJFSC",
+                    "username": "Sarvar Mamatqulov",
+                    "version": "1.4.6.0",
+                    "working": True,
+                    "detail": None,
+                    "reportedAt": "2026-07-14T08:00:00+00:00",
+                    "isStale": False,
+                    "minutesSinceReport": 5,
+                }
+            ]
+        }
+    )
+
+    computer: str
+    username: str | None
+    version: str | None
+    working: bool
+    detail: str | None
+    reported_at: datetime = Field(serialization_alias="reportedAt")
+    is_stale: bool = Field(
+        serialization_alias="isStale",
+        description="`reported_at`dan beri `AGENT_STALE_MINUTES`dan ko'p vaqt o'tgan bo'lsa true",
+    )
+    minutes_since_report: int = Field(
+        serialization_alias="minutesSinceReport", description="So'nggi hisobotdan beri o'tgan daqiqalar"
+    )
+
+
+class AgentsSummaryOut(BaseModel):
+    """`GET /api/agents/summary` — dashboard KPI kartochkalari uchun."""
+
+    model_config = ConfigDict(
+        json_schema_extra={"examples": [{"total": 42, "working": 38, "notWorking": 2, "stale": 4}]}
+    )
+
+    total: int
+    working: int
+    not_working: int = Field(serialization_alias="notWorking")
+    stale: int = Field(description="`AGENT_STALE_MINUTES`dan ko'p vaqt signal bermagan agentlar soni")
+
+
+# ---------------------------------------------------------------------------
 # Dashboard foydalanuvchisi autentifikatsiyasi (JWT)
 # ---------------------------------------------------------------------------
 

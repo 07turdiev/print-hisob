@@ -23,5 +23,9 @@ class Settings(BaseSettings):
     # Mahalliy dev portlari (istalgan localhost) baribir avtomatik ruxsat etiladi.
     cors_origins: str = ""
 
+    # Agent shu daqiqadan beri signal bermasa, "aloqasi yo'q" (stale) deb
+    # belgilanadi (heartbeat oralig'idan kattaroq qiling).
+    agent_stale_minutes: int = 60
+
 
 settings = Settings()

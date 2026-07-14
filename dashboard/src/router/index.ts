@@ -8,6 +8,7 @@ import EmployeesView from '../views/EmployeesView.vue'
 import PrintersView from '../views/PrintersView.vue'
 import DepartmentsView from '../views/DepartmentsView.vue'
 import JournalView from '../views/JournalView.vue'
+import AgentsView from '../views/AgentsView.vue'
 
 declare module 'vue-router' {
   interface RouteMeta {
@@ -60,6 +61,12 @@ const router = createRouter({
       name: 'journal',
       component: JournalView,
       meta: { title: "Chop etishlar jurnali", showPeriodSelector: false },
+    },
+    {
+      path: '/agentlar',
+      name: 'agents',
+      component: AgentsView,
+      meta: { title: 'Agentlar', showPeriodSelector: false },
     },
     { path: '/:pathMatch(.*)*', redirect: '/' },
   ],

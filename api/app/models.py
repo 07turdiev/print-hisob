@@ -110,3 +110,32 @@ class EmployeeQuota(Base):
         Index("ix_employee_quotas_login", "login"),
         Index("ix_employee_quotas_period", "period_type", "year", "period_no"),
     )
+
+
+class AgentStatus(Base):
+    """Agent (.exe)dan davriy sog'lik signali (heartbeat).
+
+    Har bir kompyuter uchun bitta qator — har safar eng so'nggi hisobot bilan
+    ustiga yoziladi (`computer` bo'yicha upsert), tarix saqlanmaydi.
+    """
+
+    __tablename__ = "agent_status"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+
+    computer: Mapped[str] = mapped_column(String(255), unique=True)
+    # Windows displey nomi (masalan "Sarvar Mamatqulov") — AD login emas,
+    # shuning uchun `Employee.login` bilan bog'lanmaydi.
+    username: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    version: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    working: Mapped[bool] = mapped_column(Boolean)
+    detail: Mapped[str | None] = mapped_column(Text, nullable=True)
+    reported_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    __table_args__ = (
+        Index("ix_agent_status_reported_at", "reported_at"),
+        Index("ix_agent_status_working", "working"),
+    )

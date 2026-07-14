@@ -13,6 +13,8 @@ const ICONS: Record<string, string> = {
     '<rect x="2.5" y="7.5" width="19" height="13.5" rx="1.5"/><path d="M16 21V5.5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2V21"/>',
   journal:
     '<path d="M14.5 2.5h-8a2 2 0 0 0-2 2v15a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2V8z"/><path d="M14.5 2.5V8h5.5"/><path d="M8.5 13h7M8.5 17h7"/>',
+  agents:
+    '<rect x="2.5" y="4" width="19" height="12.5" rx="1.5"/><path d="M8 20.5h8M12 16.5v4"/><circle cx="17.5" cy="8.5" r="1.1" fill="currentColor" stroke="none"/>',
   sun: '<circle cx="12" cy="12" r="4.5"/><path d="M12 2v2.5M12 19.5V22M4.2 4.2l1.8 1.8M18 18l1.8 1.8M2 12h2.5M19.5 12H22M4.2 19.8l1.8-1.8M18 6l1.8-1.8"/>',
   moon: '<path d="M20.5 14.2A8.5 8.5 0 1 1 9.8 3.5 6.6 6.6 0 0 0 20.5 14.2z"/>',
   logout: '<path d="M9.5 20.5h-4a2 2 0 0 1-2-2v-13a2 2 0 0 1 2-2h4"/><path d="M16 16.5l4.5-4.5-4.5-4.5"/><path d="M20.5 12h-11.5"/>',

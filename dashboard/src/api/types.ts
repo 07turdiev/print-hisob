@@ -175,3 +175,33 @@ export interface PrintJobPage {
   jobs: PrintJob[]
   total: number
 }
+
+// --- Print agents (heartbeat monitor) ------------------------------------
+
+/** One row from GET /api/agents — the last reported heartbeat of a workstation's print agent. */
+export interface Agent {
+  computer: string
+  /** Person's display name (not a login) as reported by the agent. */
+  username: string
+  version: string
+  working: boolean
+  /** Error/status message from the agent; null when everything is fine. */
+  detail: string | null
+  reportedAt: string
+  /** Hasn't reported within the server-configured stale window; treat as offline. */
+  isStale: boolean
+  minutesSinceReport: number
+}
+
+export interface AgentQuery {
+  working?: boolean
+  stale?: boolean
+  q?: string
+}
+
+export interface AgentsSummary {
+  total: number
+  working: number
+  notWorking: number
+  stale: number
+}

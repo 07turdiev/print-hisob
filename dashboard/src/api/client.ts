@@ -1,6 +1,9 @@
 import router from '../router'
 import { useAuthStore } from '../stores/auth'
 import type {
+  Agent,
+  AgentQuery,
+  AgentsSummary,
   DepartmentStat,
   Employee,
   EmployeeQuery,
@@ -269,4 +272,20 @@ export async function getPrintJobs(query: PrintJobQuery = {}): Promise<PrintJobP
   const jobs = (await response.json()) as PrintJobPage['jobs']
   const total = Number(response.headers.get('X-Total-Count') ?? jobs.length)
   return { jobs, total }
+}
+
+// --- Print agents (heartbeat monitor) ------------------------------------
+
+export function getAgents(query: AgentQuery = {}): Promise<Agent[]> {
+  return request<Agent[]>('/api/agents', {
+    query: {
+      working: query.working,
+      stale: query.stale,
+      q: query.q,
+    },
+  })
+}
+
+export function getAgentsSummary(): Promise<AgentsSummary> {
+  return request<AgentsSummary>('/api/agents/summary')
 }

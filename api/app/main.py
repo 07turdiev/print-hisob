@@ -3,22 +3,26 @@ import io
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from urllib.parse import quote
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Response, Security, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import APIKeyHeader
-from sqlalchemy import case, exists, func, or_, select, update
+from sqlalchemy import Integer, case, cast, exists, func, literal, or_, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import create_access_token, require_user, verify_credentials
 from app.config import settings
 from app.db import Base, engine, get_session
-from app.models import Employee, EmployeeQuota, PrintJob
+from app.models import AgentStatus, Employee, EmployeeQuota, PrintJob
 from app.periods import Period, PeriodType, period_bounds, period_label
 from app.schemas import (
+    AgentOut,
+    AgentsSummaryOut,
+    AgentStatusIn,
+    AgentStatusResult,
     DepartmentRollupOut,
     EmployeeOut,
     EmployeeQuotaIn,
@@ -80,6 +84,7 @@ TAGS_METADATA = [
     {"name": "employees", "description": "AD (Active Directory) xodimlar sinxronizatsiyasi."},
     {"name": "quotas", "description": "Xodimlar uchun oylik/choraklik qog'oz kvotalari."},
     {"name": "stats", "description": "Chorak/oy bo'yicha dashboard statistikasi."},
+    {"name": "agents", "description": "Agent (.exe) sog'lik holati (heartbeat) monitoringi."},
     {"name": "service", "description": "Xizmat va baza holatini tekshirish."},
 ]
 
@@ -446,6 +451,162 @@ async def list_employees(
 
     stmt = stmt.limit(limit).offset(offset)
     return list((await session.scalars(stmt)).all())
+
+
+# ---------------------------------------------------------------------------
+# Agent (.exe) sog'lik holati (heartbeat)
+# ---------------------------------------------------------------------------
+
+
+def _agent_stale_cutoff_expr():
+    """`now() - AGENT_STALE_MINUTES` ifodasini quradi (SQL tomonda hisoblanadi)."""
+    return func.now() - literal(timedelta(minutes=settings.agent_stale_minutes))
+
+
+@app.post(
+    "/api/agent-status",
+    response_model=AgentStatusResult,
+    dependencies=[Security(require_api_key)],
+    tags=["agents"],
+    summary="Agentning sog'lik holati haqida signal (heartbeat)",
+    response_description="Qabul qilingan kompyuter nomi va holat",
+    responses=UNAUTHORIZED_RESPONSE,
+)
+async def ingest_agent_status(
+    payload: AgentStatusIn,
+    session: AsyncSession = Depends(get_session),
+) -> AgentStatusResult:
+    """Har bir ish stantsiyasidan davriy kelib turadigan sog'lik signali.
+
+    `computer` bo'yicha upsert qilinadi — tarix saqlanmaydi, faqat eng so'nggi
+    hisobot qoladi. Bir xil signal qayta yuborilsa ham xavfsiz (idempotent).
+    """
+    row = {
+        "computer": payload.computer,
+        "username": payload.username,
+        "version": payload.version,
+        "working": payload.working,
+        "detail": payload.detail,
+        "reported_at": payload.normalized_timestamp(),
+    }
+
+    async with session.begin():
+        stmt = pg_insert(AgentStatus).values(**row)
+        stmt = stmt.on_conflict_do_update(
+            index_elements=["computer"],
+            set_={
+                "username": stmt.excluded.username,
+                "version": stmt.excluded.version,
+                "working": stmt.excluded.working,
+                "detail": stmt.excluded.detail,
+                "reported_at": stmt.excluded.reported_at,
+                "updated_at": func.now(),
+            },
+        )
+        await session.execute(stmt)
+
+    logger.info(
+        "agent-status computer=%s working=%s", payload.computer, payload.working
+    )
+    return AgentStatusResult(computer=payload.computer, status="ok")
+
+
+@app.get(
+    "/api/agents",
+    response_model=list[AgentOut],
+    dependencies=[Security(require_user)],
+    tags=["agents"],
+    summary="Barcha agentlarning so'nggi holati",
+    response_description="Har bir kompyuter uchun so'nggi hisobot va 'aloqasi yo'q' (stale) belgisi",
+    responses=USER_UNAUTHORIZED_RESPONSE,
+)
+async def list_agents(
+    session: AsyncSession = Depends(get_session),
+    working: bool | None = Query(default=None, description="Faqat ishlayotgan/ishlamayotgan agentlar"),
+    stale: bool | None = Query(
+        default=None, description="Faqat aloqasi yo'q (stale) yoki aloqasi bor agentlar"
+    ),
+    q: str | None = Query(default=None, description="Kompyuter yoki foydalanuvchi nomi bo'yicha qidiruv"),
+) -> list[AgentOut]:
+    """Dashboard uchun agentlar ro'yxati. `isStale` va `minutesSinceReport`
+    SQL tomonda `AGENT_STALE_MINUTES` sozlamasiga nisbatan hisoblanadi.
+    """
+    stale_cutoff = _agent_stale_cutoff_expr()
+    is_stale_expr = (AgentStatus.reported_at < stale_cutoff).label("is_stale")
+    minutes_since_expr = cast(
+        func.extract("epoch", func.now() - AgentStatus.reported_at) / 60, Integer
+    ).label("minutes_since_report")
+
+    stmt = select(
+        AgentStatus.computer,
+        AgentStatus.username,
+        AgentStatus.version,
+        AgentStatus.working,
+        AgentStatus.detail,
+        AgentStatus.reported_at,
+        is_stale_expr,
+        minutes_since_expr,
+    )
+
+    if working is not None:
+        stmt = stmt.where(AgentStatus.working.is_(working))
+    if q:
+        like = f"%{q}%"
+        stmt = stmt.where(or_(AgentStatus.computer.ilike(like), AgentStatus.username.ilike(like)))
+    if stale is True:
+        stmt = stmt.where(AgentStatus.reported_at < stale_cutoff)
+    elif stale is False:
+        stmt = stmt.where(AgentStatus.reported_at >= stale_cutoff)
+
+    # Muammoli (ishlamayotgan) agentlar birinchi, so'ng eng uzoq vaqt aloqasi
+    # yo'qlar tepada bo'ladi.
+    stmt = stmt.order_by(AgentStatus.working.asc(), AgentStatus.reported_at.asc())
+
+    rows = (await session.execute(stmt)).all()
+    return [
+        AgentOut(
+            computer=row.computer,
+            username=row.username,
+            version=row.version,
+            working=row.working,
+            detail=row.detail,
+            reported_at=row.reported_at,
+            is_stale=bool(row.is_stale),
+            minutes_since_report=int(row.minutes_since_report or 0),
+        )
+        for row in rows
+    ]
+
+
+@app.get(
+    "/api/agents/summary",
+    response_model=AgentsSummaryOut,
+    dependencies=[Security(require_user)],
+    tags=["agents"],
+    summary="Agentlar bo'yicha umumiy ko'rsatkichlar (KPI kartochkalari uchun)",
+    responses=USER_UNAUTHORIZED_RESPONSE,
+)
+async def agents_summary(session: AsyncSession = Depends(get_session)) -> AgentsSummaryOut:
+    stale_cutoff = _agent_stale_cutoff_expr()
+    stmt = select(
+        func.count().label("total"),
+        func.coalesce(
+            func.sum(case((AgentStatus.working.is_(True), 1), else_=0)), 0
+        ).label("working"),
+        func.coalesce(
+            func.sum(case((AgentStatus.working.is_(False), 1), else_=0)), 0
+        ).label("not_working"),
+        func.coalesce(
+            func.sum(case((AgentStatus.reported_at < stale_cutoff, 1), else_=0)), 0
+        ).label("stale"),
+    )
+    row = (await session.execute(stmt)).one()
+    return AgentsSummaryOut(
+        total=row.total or 0,
+        working=row.working or 0,
+        not_working=row.not_working or 0,
+        stale=row.stale or 0,
+    )
 
 
 # ---------------------------------------------------------------------------

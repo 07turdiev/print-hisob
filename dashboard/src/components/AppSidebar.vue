@@ -13,6 +13,7 @@ const NAV_ITEMS = [
   { to: '/printerlar', icon: 'printers', label: 'Printerlar' },
   { to: '/bolimlar', icon: 'departments', label: "Bo'limlar" },
   { to: '/jurnal', icon: 'journal', label: "Jurnal" },
+  { to: '/agentlar', icon: 'agents', label: 'Agentlar' },
 ]
 </script>
 
