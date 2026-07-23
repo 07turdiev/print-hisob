@@ -315,6 +315,7 @@ class StatsSummaryOut(BaseModel):
                     "totalJobs": 934,
                     "successRate": 0.97,
                     "activePrinters": 6,
+                    "defaultQuota": 300,
                 }
             ]
         }
@@ -327,6 +328,13 @@ class StatsSummaryOut(BaseModel):
     total_jobs: int = Field(serialization_alias="totalJobs")
     success_rate: float = Field(serialization_alias="successRate")
     active_printers: int = Field(serialization_alias="activePrinters")
+    default_quota: int = Field(
+        serialization_alias="defaultQuota",
+        description=(
+            "Ushbu davr turi (oy/chorak) uchun standart kvota — xodim uchun aniq "
+            "kvota belgilanmagan bo'lsa shu qiymat 'allocated' sifatida ishlatiladi."
+        ),
+    )
 
 
 class EmployeeStatOut(BaseModel):

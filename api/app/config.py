@@ -32,5 +32,12 @@ class Settings(BaseSettings):
     # aniqlash uchun foydali belgi.
     agent_recent_restart_seconds: int = 600
 
+    # Standart (default) qog'oz kvotasi — xodim uchun tegishli davrga aniq
+    # kvota (EmployeeQuota) belgilanmagan bo'lsa shu qiymat ishlatiladi (0 emas),
+    # aks holda hamma "limitdan oshgan" bo'lib ko'rinadi. Ikkalasi mustaqil
+    # qiymatlar — chorak oyning 3 baravari emas, mijoz ikkalasini alohida bergan.
+    default_quota_month: int = 200
+    default_quota_quarter: int = 300
+
 
 settings = Settings()

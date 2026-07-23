@@ -7,7 +7,8 @@ import CsvDownloadButton from '../components/CsvDownloadButton.vue'
 import AppIcon from '../components/AppIcon.vue'
 
 const periodStore = usePeriodStore()
-const { rows, search, activeFilter, departmentOptions, loading, error, saveQuota } = useEmployeesPage()
+const { rows, search, activeFilter, departmentOptions, defaultQuota, loading, error, saveQuota } =
+  useEmployeesPage()
 
 function handleSave(login: string, allocatedPages: number) {
   saveQuota(login, allocatedPages).catch(() => {
@@ -37,6 +38,11 @@ function handleSave(login: string, allocatedPages: number) {
     </div>
 
     <DepartmentFilter :department-options="departmentOptions" />
+
+    <p class="quota-hint">
+      Kvota tanlangan davr uchun saqlanadi. Belgilanmagan xodimlarga standart
+      <strong>{{ defaultQuota }}</strong> varaq qo'llanadi.
+    </p>
 
     <EmployeeQuotaTable :employees="rows" title="Barcha xodimlar va kvotalar" @save="handleSave">
       <template #actions>
@@ -132,6 +138,12 @@ function handleSave(login: string, allocatedPages: number) {
   border: 1px solid var(--color-border);
   padding: 0.4rem 0.8rem;
   border-radius: 8px;
+  color: var(--color-text-muted);
+  font-size: 0.85rem;
+}
+
+.quota-hint {
+  margin: 0;
   color: var(--color-text-muted);
   font-size: 0.85rem;
 }

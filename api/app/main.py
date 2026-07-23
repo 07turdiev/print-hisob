@@ -17,7 +17,7 @@ from app.auth import create_access_token, require_user, verify_credentials
 from app.config import settings
 from app.db import Base, engine, get_session
 from app.models import AgentStatus, Employee, EmployeeQuota, PrintJob
-from app.periods import Period, PeriodType, period_bounds, period_label
+from app.periods import Period, PeriodType, default_quota_for, period_bounds, period_label
 from app.schemas import (
     AgentOut,
     AgentsSummaryOut,
@@ -769,6 +769,7 @@ async def stats_summary(
         total_jobs=total_jobs,
         success_rate=round(success_rate, 4),
         active_printers=row.active_printers,
+        default_quota=default_quota_for(period.period_type),
     )
 
 
@@ -806,6 +807,11 @@ async def _employee_stats_rows(
     natijalarni faqat bo'lim bo'yicha guruhlab, boshqacha formatda chiqaradi,
     lekin raqamlar (used/allocated) har doim bir xil manbadan keladi.
     """
+    # Bu davr uchun aniq kvota qatori bo'lmagan xodimlarga standart kvota
+    # qo'llanadi (0 emas) — pastda `func.coalesce` shuni ta'minlaydi (faqat
+    # qator umuman yo'qligida ishga tushadi, saqlangan 0 qiymatga tegmaydi).
+    default_allocated = default_quota_for(period.period_type)
+
     usage = (
         select(
             PrintJob.user_name.label("login"),
@@ -824,7 +830,7 @@ async def _employee_stats_rows(
             Employee.position,
             Employee.is_active,
             usage.c.used,
-            func.coalesce(EmployeeQuota.allocated_pages, 0).label("allocated"),
+            func.coalesce(EmployeeQuota.allocated_pages, default_allocated).label("allocated"),
         )
         .select_from(usage)
         .outerjoin(Employee, Employee.login == usage.c.login)
@@ -1176,20 +1182,34 @@ async def _department_rollup(session: AsyncSession, period: Period) -> list[Depa
         .subquery()
     )
 
-    quota_totals = (
+    # Har bir faol xodim uchun shu davrga aniq kvota qatori bo'lmasa, standart
+    # kvota qo'llanadi (0 emas) — shuning uchun `Employee`dan boshlab
+    # `EmployeeQuota`ga outer join qilinadi (aksincha bo'lsa, kvota qatori
+    # yo'q xodimlar yig'indiga umuman kirmay qolar edi).
+    default_allocated = default_quota_for(period.period_type)
+    per_employee_quota = (
         select(
             column.label("name"),
-            func.coalesce(func.sum(EmployeeQuota.allocated_pages), 0).label("total_allocated"),
+            func.coalesce(EmployeeQuota.allocated_pages, default_allocated).label("allocated"),
         )
-        .select_from(EmployeeQuota)
-        .join(Employee, Employee.login == EmployeeQuota.login)
-        .where(
-            column.isnot(None),
-            EmployeeQuota.period_type == period.period_type,
-            EmployeeQuota.year == period.year,
-            EmployeeQuota.period_no == period.period_no,
+        .select_from(Employee)
+        .outerjoin(
+            EmployeeQuota,
+            (EmployeeQuota.login == Employee.login)
+            & (EmployeeQuota.period_type == period.period_type)
+            & (EmployeeQuota.year == period.year)
+            & (EmployeeQuota.period_no == period.period_no),
         )
-        .group_by(column)
+        .where(column.isnot(None), Employee.is_active.is_(True))
+        .subquery()
+    )
+
+    quota_totals = (
+        select(
+            per_employee_quota.c.name,
+            func.sum(per_employee_quota.c.allocated).label("total_allocated"),
+        )
+        .group_by(per_employee_quota.c.name)
         .subquery()
     )
 

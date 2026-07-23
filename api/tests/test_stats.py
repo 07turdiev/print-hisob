@@ -20,7 +20,58 @@ def test_stats_summary_builds_without_error(client):
         "totalJobs": 0,
         "successRate": 0.0,
         "activePrinters": 0,
+        "defaultQuota": 300,
     }
+
+
+def test_stats_summary_default_quota_for_month(client):
+    r = client.get(
+        "/api/stats/summary", params={"period_type": "month", "year": 2026, "period_no": 7}
+    )
+    assert r.status_code == 200
+    assert r.json()["defaultQuota"] == 200
+
+
+def test_stats_summary_default_quota_for_quarter(client):
+    r = client.get("/api/stats/summary", params=PERIOD)
+    assert r.status_code == 200
+    assert r.json()["defaultQuota"] == 300
+
+
+def test_stats_employees_sql_uses_default_quota_for_quarter(client):
+    from conftest import CAPTURED
+
+    r = client.get("/api/stats/employees", params=PERIOD)
+    assert r.status_code == 200
+    assert any(300 in params.values() for params in CAPTURED)
+
+
+def test_stats_employees_sql_uses_default_quota_for_month(client):
+    from conftest import CAPTURED
+
+    r = client.get(
+        "/api/stats/employees", params={"period_type": "month", "year": 2026, "period_no": 7}
+    )
+    assert r.status_code == 200
+    assert any(200 in params.values() for params in CAPTURED)
+
+
+def test_stats_departments_sql_uses_default_quota_for_quarter(client):
+    from conftest import CAPTURED
+
+    r = client.get("/api/stats/departments", params=PERIOD)
+    assert r.status_code == 200
+    assert any(300 in params.values() for params in CAPTURED)
+
+
+def test_stats_departments_sql_uses_default_quota_for_month(client):
+    from conftest import CAPTURED
+
+    r = client.get(
+        "/api/stats/departments", params={"period_type": "month", "year": 2026, "period_no": 7}
+    )
+    assert r.status_code == 200
+    assert any(200 in params.values() for params in CAPTURED)
 
 
 def test_stats_employees_builds_without_error(client):

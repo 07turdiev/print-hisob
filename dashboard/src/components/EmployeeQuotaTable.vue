@@ -1,12 +1,40 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import type { EmployeeStat } from '../api/types'
+import { usePeriodStore } from '../stores/period'
 import StatusBadge from './StatusBadge.vue'
+
+const MONTH_NAMES = [
+  'Yanvar',
+  'Fevral',
+  'Mart',
+  'Aprel',
+  'May',
+  'Iyun',
+  'Iyul',
+  'Avgust',
+  'Sentyabr',
+  'Oktyabr',
+  'Noyabr',
+  'Dekabr',
+]
 
 const props = withDefaults(defineProps<{ employees: EmployeeStat[]; title?: string }>(), {
   title: "Xodimlar bo'yicha kvota",
 })
 const emit = defineEmits<{ save: [login: string, allocatedPages: number] }>()
+
+const periodStore = usePeriodStore()
+
+/** e.g. "3-chorak" or "Iyul" — matches the backend's period_label so the quota column
+ *  header always states which period is being edited (quotas are per-period rows). */
+const periodLabel = computed(() =>
+  periodStore.periodType === 'quarter'
+    ? `${periodStore.periodNo}-chorak`
+    : MONTH_NAMES[periodStore.periodNo - 1] ?? String(periodStore.periodNo),
+)
+
+const quotaColumnLabel = computed(() => `Kvota (${periodLabel.value})`)
 
 type SortKey = 'name' | 'position' | 'used' | 'allocated' | 'remaining' | 'percent'
 
@@ -94,7 +122,7 @@ function sortIndicator(key: SortKey): string {
             <th>Bo'lim</th>
             <th>Holat</th>
             <th class="sortable num" @click="setSort('used')">Sarflangan (varaq){{ sortIndicator('used') }}</th>
-            <th class="sortable num" @click="setSort('allocated')">Kvota (varaq){{ sortIndicator('allocated') }}</th>
+            <th class="sortable num" @click="setSort('allocated')">{{ quotaColumnLabel }}{{ sortIndicator('allocated') }}</th>
             <th class="sortable num" @click="setSort('remaining')">Qoldiq (varaq){{ sortIndicator('remaining') }}</th>
             <th class="sortable num" @click="setSort('percent')">%{{ sortIndicator('percent') }}</th>
           </tr>

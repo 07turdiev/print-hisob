@@ -9,7 +9,22 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Literal
 
+from app.config import settings
+
 PeriodType = Literal["month", "quarter"]
+
+
+def default_quota_for(period_type: PeriodType) -> int:
+    """Berilgan davr turi (`month`/`quarter`) uchun standart kvota qiymatini qaytaradi.
+
+    Xodim uchun shu davrga aniq `EmployeeQuota` qatori bo'lmasa (SQL NULL —
+    qator umuman yo'q, aks holda saqlangan qiymat 0 bo'lsa ham o'zi qoladi),
+    ushbu standart qiymat `allocated` sifatida ishlatiladi. Ikkala qiymat
+    (`DEFAULT_QUOTA_MONTH` / `DEFAULT_QUOTA_QUARTER`) shu yerdan olinadi —
+    boshqa joyda qayta yozilmaydi, shunday qilib ular hech qachon farqlanib
+    ketmaydi.
+    """
+    return settings.default_quota_month if period_type == "month" else settings.default_quota_quarter
 
 
 def validate_period_no(period_type: PeriodType, period_no: int) -> None:

@@ -1,6 +1,6 @@
 import { computed, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
-import { ApiError, getEmployeeStats, getEmployees, getQuotas, putQuotas } from '../api/client'
+import { ApiError, getEmployeeStats, getEmployees, getQuotas, getSummary, putQuotas } from '../api/client'
 import type { Employee, EmployeeQuota, EmployeeStat, MergedEmployeeRow } from '../api/types'
 import { usePeriodStore } from '../stores/period'
 
@@ -22,6 +22,10 @@ export function useEmployeesPage() {
   const adEmployees = ref<Employee[]>([])
   const stats = ref<EmployeeStat[]>([])
   const quotas = ref<EmployeeQuota[]>([])
+  /** Default quota (pages) for the selected period, used when an employee has neither
+   *  a stats row (no prints) nor an explicit quota row — keeps this page in sync with
+   *  what the backend applies everywhere else instead of falling back to a hardcoded 0. */
+  const defaultQuota = ref(0)
   /** Unfiltered directory snapshot, used only to populate the department dropdown. */
   const directoryOptions = ref<Employee[]>([])
 
@@ -34,19 +38,22 @@ export function useEmployeesPage() {
     loading.value = true
     error.value = null
     try {
-      const [adRes, statsRes, quotasRes] = await Promise.all([
+      const periodParams = { periodType: periodType.value, year: year.value, periodNo: periodNo.value }
+      const [adRes, statsRes, quotasRes, summaryRes] = await Promise.all([
         getEmployees({
           department: department.value || undefined,
           q: search.value || undefined,
           isActive: activeFilter.value === '' ? undefined : activeFilter.value === 'active',
           limit: 1000,
         }),
-        getEmployeeStats({ periodType: periodType.value, year: year.value, periodNo: periodNo.value }),
-        getQuotas({ periodType: periodType.value, year: year.value, periodNo: periodNo.value }),
+        getEmployeeStats(periodParams),
+        getQuotas(periodParams),
+        getSummary(periodParams),
       ])
       adEmployees.value = adRes
       stats.value = statsRes
       quotas.value = quotasRes
+      defaultQuota.value = summaryRes.defaultQuota
     } catch (err) {
       error.value = err instanceof ApiError ? err.message : "Ma'lumotlarni yuklab bo'lmadi"
     } finally {
@@ -81,7 +88,7 @@ export function useEmployeesPage() {
       seen.add(emp.login)
       const stat = statMap.get(emp.login)
       const used = stat?.used ?? 0
-      const allocated = stat?.allocated ?? quotaMap.get(emp.login) ?? 0
+      const allocated = stat?.allocated ?? quotaMap.get(emp.login) ?? defaultQuota.value
       result.push({
         login: emp.login,
         fullName: emp.fullName,
@@ -150,6 +157,7 @@ export function useEmployeesPage() {
     search,
     activeFilter,
     departmentOptions,
+    defaultQuota,
     loading,
     error,
     saveQuota,

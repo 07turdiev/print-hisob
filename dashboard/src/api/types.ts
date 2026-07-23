@@ -22,6 +22,8 @@ export interface StatsSummary {
   totalJobs: number
   successRate: number
   activePrinters: number
+  /** Default quota (in pages) applied to employees with no explicit quota row for this period. */
+  defaultQuota: number
 }
 
 export interface EmployeeStat {
