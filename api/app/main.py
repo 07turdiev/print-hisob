@@ -487,6 +487,9 @@ async def ingest_agent_status(
         "version": payload.version,
         "working": payload.working,
         "detail": payload.detail,
+        "boot_time_utc": payload.normalized_boot_time(),
+        "uptime_seconds": payload.uptime_seconds,
+        "agent_uptime_seconds": payload.agent_uptime_seconds,
         "reported_at": payload.normalized_timestamp(),
     }
 
@@ -499,6 +502,9 @@ async def ingest_agent_status(
                 "version": stmt.excluded.version,
                 "working": stmt.excluded.working,
                 "detail": stmt.excluded.detail,
+                "boot_time_utc": stmt.excluded.boot_time_utc,
+                "uptime_seconds": stmt.excluded.uptime_seconds,
+                "agent_uptime_seconds": stmt.excluded.agent_uptime_seconds,
                 "reported_at": stmt.excluded.reported_at,
                 "updated_at": func.now(),
             },
@@ -536,6 +542,10 @@ async def list_agents(
     minutes_since_expr = cast(
         func.extract("epoch", func.now() - AgentStatus.reported_at) / 60, Integer
     ).label("minutes_since_report")
+    recently_restarted_expr = (
+        AgentStatus.agent_uptime_seconds.is_not(None)
+        & (AgentStatus.agent_uptime_seconds < settings.agent_recent_restart_seconds)
+    ).label("recently_restarted")
 
     stmt = select(
         AgentStatus.computer,
@@ -543,9 +553,13 @@ async def list_agents(
         AgentStatus.version,
         AgentStatus.working,
         AgentStatus.detail,
+        AgentStatus.boot_time_utc,
+        AgentStatus.uptime_seconds,
+        AgentStatus.agent_uptime_seconds,
         AgentStatus.reported_at,
         is_stale_expr,
         minutes_since_expr,
+        recently_restarted_expr,
     )
 
     if working is not None:
@@ -570,9 +584,13 @@ async def list_agents(
             version=row.version,
             working=row.working,
             detail=row.detail,
+            boot_time_utc=row.boot_time_utc,
+            uptime_seconds=row.uptime_seconds,
+            agent_uptime_seconds=row.agent_uptime_seconds,
             reported_at=row.reported_at,
             is_stale=bool(row.is_stale),
             minutes_since_report=int(row.minutes_since_report or 0),
+            recently_restarted=bool(row.recently_restarted),
         )
         for row in rows
     ]
@@ -588,6 +606,9 @@ async def list_agents(
 )
 async def agents_summary(session: AsyncSession = Depends(get_session)) -> AgentsSummaryOut:
     stale_cutoff = _agent_stale_cutoff_expr()
+    recently_restarted_condition = AgentStatus.agent_uptime_seconds.is_not(None) & (
+        AgentStatus.agent_uptime_seconds < settings.agent_recent_restart_seconds
+    )
     stmt = select(
         func.count().label("total"),
         func.coalesce(
@@ -599,6 +620,9 @@ async def agents_summary(session: AsyncSession = Depends(get_session)) -> Agents
         func.coalesce(
             func.sum(case((AgentStatus.reported_at < stale_cutoff, 1), else_=0)), 0
         ).label("stale"),
+        func.coalesce(
+            func.sum(case((recently_restarted_condition, 1), else_=0)), 0
+        ).label("recently_restarted"),
     )
     row = (await session.execute(stmt)).one()
     return AgentsSummaryOut(
@@ -606,6 +630,7 @@ async def agents_summary(session: AsyncSession = Depends(get_session)) -> Agents
         working=row.working or 0,
         not_working=row.not_working or 0,
         stale=row.stale or 0,
+        recently_restarted=row.recently_restarted or 0,
     )
 
 

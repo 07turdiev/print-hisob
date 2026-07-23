@@ -187,10 +187,18 @@ export interface Agent {
   working: boolean
   /** Error/status message from the agent; null when everything is fine. */
   detail: string | null
+  /** Workstation boot time (UTC, ISO); null for older agents that don't report it. */
+  bootTimeUtc: string | null
+  /** Workstation uptime in seconds since boot; null for older agents. */
+  uptimeSeconds: number | null
+  /** How long the agent process itself has been running, in seconds; null for older agents. */
+  agentUptimeSeconds: number | null
   reportedAt: string
   /** Hasn't reported within the server-configured stale window; treat as offline. */
   isStale: boolean
   minutesSinceReport: number
+  /** Server-computed: agent process started very recently — may indicate a crash loop. */
+  recentlyRestarted: boolean
 }
 
 export interface AgentQuery {
@@ -204,4 +212,5 @@ export interface AgentsSummary {
   working: number
   notWorking: number
   stale: number
+  recentlyRestarted: number
 }

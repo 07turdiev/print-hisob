@@ -26,6 +26,11 @@ class Settings(BaseSettings):
     # Agent shu daqiqadan beri signal bermasa, "aloqasi yo'q" (stale) deb
     # belgilanadi (heartbeat oralig'idan kattaroq qiling).
     agent_stale_minutes: int = 60
+    # Agent jarayoni shu soniyadan kam vaqt oldin ishga tushgan bo'lsa
+    # "yaqinda qayta ishga tushgan" (recentlyRestarted) deb belgilanadi —
+    # bu doimiy qulab tushib qayta ishga tushayotgan (crash-loop) agentni
+    # aniqlash uchun foydali belgi.
+    agent_recent_restart_seconds: int = 600
 
 
 settings = Settings()

@@ -14,6 +14,18 @@ PAYLOAD = {
     "timestamp": "2026-07-13T10:22:31Z",
 }
 
+FULL_PAYLOAD = {
+    "computer": "DESKTOP-20DJFSC",
+    "username": "jdoe",
+    "version": "1.4.11",
+    "working": True,
+    "detail": "",
+    "bootTimeUtc": "2026-07-20T05:12:44+00:00",
+    "uptimeSeconds": 274320,
+    "agentUptimeSeconds": 63,
+    "timestamp": "2026-07-23T09:38:47+00:00",
+}
+
 
 def test_agent_status_ingest_returns_ok(client):
     r = client.post("/api/agent-status", json=PAYLOAD)
@@ -66,6 +78,30 @@ def test_agent_status_invalid_payload_rejected(client):
     assert r.status_code == 422
 
 
+def test_agent_status_new_fields_captured(client):
+    r = client.post("/api/agent-status", json=FULL_PAYLOAD)
+    assert r.status_code == 200
+    params = CAPTURED[-1]
+    assert params["boot_time_utc"].isoformat() == "2026-07-20T05:12:44+00:00"
+    assert params["uptime_seconds"] == 274320
+    assert params["agent_uptime_seconds"] == 63
+
+
+def test_agent_status_without_new_fields_defaults_to_null(client):
+    r = client.post("/api/agent-status", json=PAYLOAD)
+    assert r.status_code == 200
+    params = CAPTURED[-1]
+    assert params["boot_time_utc"] is None
+    assert params["uptime_seconds"] is None
+    assert params["agent_uptime_seconds"] is None
+
+
+def test_agent_status_negative_uptime_rejected(client):
+    job = dict(FULL_PAYLOAD) | {"uptimeSeconds": -1}
+    r = client.post("/api/agent-status", json=job)
+    assert r.status_code == 422
+
+
 def test_list_agents_builds_without_error(client):
     r = client.get("/api/agents")
     assert r.status_code == 200
@@ -94,7 +130,13 @@ def test_list_agents_without_bearer_rejected():
 def test_agents_summary_builds_without_error(client):
     r = client.get("/api/agents/summary")
     assert r.status_code == 200
-    assert r.json() == {"total": 0, "working": 0, "notWorking": 0, "stale": 0}
+    assert r.json() == {
+        "total": 0,
+        "working": 0,
+        "notWorking": 0,
+        "stale": 0,
+        "recentlyRestarted": 0,
+    }
 
 
 def test_agents_summary_without_bearer_rejected():

@@ -484,11 +484,14 @@ class AgentStatusIn(BaseModel):
             "examples": [
                 {
                     "computer": "DESKTOP-20DJFSC",
-                    "username": "Sarvar Mamatqulov",
-                    "version": "1.4.6.0",
+                    "username": "jdoe",
+                    "version": "1.4.11",
                     "working": True,
                     "detail": "",
-                    "timestamp": "2026-07-13T10:22:31Z",
+                    "bootTimeUtc": "2026-07-20T05:12:44+00:00",
+                    "uptimeSeconds": 274320,
+                    "agentUptimeSeconds": 63,
+                    "timestamp": "2026-07-23T09:38:47+00:00",
                 }
             ]
         },
@@ -502,6 +505,14 @@ class AgentStatusIn(BaseModel):
     working: bool
     # Xato/holat matni. Bo'sh satr ("") NULL sifatida saqlanadi.
     detail: _optional_text(4096) = None
+    # Ish stantsiyasi qachon yoqilgani. Eski agentlar yubormaydi -> None.
+    boot_time_utc: datetime | None = Field(default=None, alias="bootTimeUtc")
+    # Ish stantsiyasining ishlab turgan vaqti (soniyalarda). Eski agentlar
+    # yubormaydi -> None.
+    uptime_seconds: int | None = Field(default=None, ge=0, alias="uptimeSeconds")
+    # Agent jarayonining ishlab turgan vaqti (soniyalarda) — kichik bo'lsa
+    # yaqinda qayta ishga tushgan (ehtimol crash-loop) degani.
+    agent_uptime_seconds: int | None = Field(default=None, ge=0, alias="agentUptimeSeconds")
     # .NET 7 xonali kasr soniya yoki oddiy "...Z" formatida qabul qilinadi.
     timestamp: datetime
 
@@ -510,6 +521,14 @@ class AgentStatusIn(BaseModel):
         if self.timestamp.tzinfo is None:
             return self.timestamp.replace(tzinfo=timezone.utc)
         return self.timestamp
+
+    def normalized_boot_time(self) -> datetime | None:
+        """`bootTimeUtc` uchun ham xuddi shu qoida — vaqt mintaqasiz bo'lsa UTC."""
+        if self.boot_time_utc is None:
+            return None
+        if self.boot_time_utc.tzinfo is None:
+            return self.boot_time_utc.replace(tzinfo=timezone.utc)
+        return self.boot_time_utc
 
 
 class AgentStatusResult(BaseModel):
@@ -529,13 +548,17 @@ class AgentOut(BaseModel):
             "examples": [
                 {
                     "computer": "DESKTOP-20DJFSC",
-                    "username": "Sarvar Mamatqulov",
-                    "version": "1.4.6.0",
+                    "username": "jdoe",
+                    "version": "1.4.11",
                     "working": True,
                     "detail": None,
-                    "reportedAt": "2026-07-14T08:00:00+00:00",
+                    "bootTimeUtc": "2026-07-20T05:12:44+00:00",
+                    "uptimeSeconds": 274320,
+                    "agentUptimeSeconds": 63,
+                    "reportedAt": "2026-07-23T09:38:47+00:00",
                     "isStale": False,
                     "minutesSinceReport": 5,
+                    "recentlyRestarted": True,
                 }
             ]
         }
@@ -546,6 +569,9 @@ class AgentOut(BaseModel):
     version: str | None
     working: bool
     detail: str | None
+    boot_time_utc: datetime | None = Field(serialization_alias="bootTimeUtc")
+    uptime_seconds: int | None = Field(serialization_alias="uptimeSeconds")
+    agent_uptime_seconds: int | None = Field(serialization_alias="agentUptimeSeconds")
     reported_at: datetime = Field(serialization_alias="reportedAt")
     is_stale: bool = Field(
         serialization_alias="isStale",
@@ -554,19 +580,34 @@ class AgentOut(BaseModel):
     minutes_since_report: int = Field(
         serialization_alias="minutesSinceReport", description="So'nggi hisobotdan beri o'tgan daqiqalar"
     )
+    recently_restarted: bool = Field(
+        serialization_alias="recentlyRestarted",
+        description=(
+            "Agent jarayoni `AGENT_RECENT_RESTART_SECONDS`dan kam vaqt oldin ishga "
+            "tushgan bo'lsa true (yaqinda qayta ishga tushgan, ehtimol crash-loop)"
+        ),
+    )
 
 
 class AgentsSummaryOut(BaseModel):
     """`GET /api/agents/summary` — dashboard KPI kartochkalari uchun."""
 
     model_config = ConfigDict(
-        json_schema_extra={"examples": [{"total": 42, "working": 38, "notWorking": 2, "stale": 4}]}
+        json_schema_extra={
+            "examples": [
+                {"total": 42, "working": 38, "notWorking": 2, "stale": 4, "recentlyRestarted": 1}
+            ]
+        }
     )
 
     total: int
     working: int
     not_working: int = Field(serialization_alias="notWorking")
     stale: int = Field(description="`AGENT_STALE_MINUTES`dan ko'p vaqt signal bermagan agentlar soni")
+    recently_restarted: int = Field(
+        serialization_alias="recentlyRestarted",
+        description="Agent jarayoni `AGENT_RECENT_RESTART_SECONDS`dan kam vaqt oldin ishga tushganlar soni",
+    )
 
 
 # ---------------------------------------------------------------------------

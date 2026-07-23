@@ -3,8 +3,19 @@ import { useAgentsPage } from '../composables/useAgentsPage'
 import type { Agent } from '../api/types'
 import AppIcon from '../components/AppIcon.vue'
 
-const { search, onlyErrors, onlyStale, agents, summary, loading, error, sortKey, sortDesc, setSort } =
-  useAgentsPage()
+const {
+  search,
+  onlyErrors,
+  onlyStale,
+  onlyRecentlyRestarted,
+  agents,
+  summary,
+  loading,
+  error,
+  sortKey,
+  sortDesc,
+  setSort,
+} = useAgentsPage()
 
 const numberFormat = new Intl.NumberFormat('uz-UZ')
 const dateTimeFormat = new Intl.DateTimeFormat('uz-UZ', { dateStyle: 'medium', timeStyle: 'short' })
@@ -29,6 +40,30 @@ function formatRelative(minutes: number): string {
   if (hours < 24) return `${hours} soat oldin`
   const days = Math.floor(hours / 24)
   return `${days} kun oldin`
+}
+
+/** Formats a duration in seconds as a short human-readable Uzbek string, e.g. "3 soat 20 daqiqa". */
+function formatDuration(seconds: number | null | undefined): string {
+  if (seconds === null || seconds === undefined) return '—'
+  if (seconds < 60) return `${Math.floor(seconds)} soniya`
+
+  const minutes = Math.floor(seconds / 60)
+  if (minutes < 60) return `${minutes} daqiqa`
+
+  const hours = Math.floor(minutes / 60)
+  const remMinutes = minutes % 60
+  if (hours < 24) {
+    return remMinutes > 0 ? `${hours} soat ${remMinutes} daqiqa` : `${hours} soat`
+  }
+
+  const days = Math.floor(hours / 24)
+  const remHours = hours % 24
+  return remHours > 0 ? `${days} kun ${remHours} soat` : `${days} kun`
+}
+
+function bootTimeTitle(agent: Agent): string {
+  if (!agent.bootTimeUtc) return ''
+  return `Yoqilgan: ${formatTimestamp(agent.bootTimeUtc)}`
 }
 
 type StatusKind = 'ok' | 'error' | 'stale'
@@ -77,6 +112,12 @@ function sortIndicator(key: string): string {
           {{ fmt(summary?.stale) }}
         </span>
       </div>
+      <div class="card kpi" :class="{ 'kpi-alert': (summary?.recentlyRestarted ?? 0) > 0 }">
+        <span class="kpi-label">Yaqinda qayta ishga tushgan</span>
+        <span class="kpi-value" :class="{ 'kpi-warning': (summary?.recentlyRestarted ?? 0) > 0 }">
+          {{ fmt(summary?.recentlyRestarted) }}
+        </span>
+      </div>
     </div>
 
     <div class="filters card">
@@ -94,6 +135,11 @@ function sortIndicator(key: string): string {
         <input v-model="onlyStale" type="checkbox" />
         <span>Faqat aloqa yo'q</span>
       </label>
+
+      <label class="toggle">
+        <input v-model="onlyRecentlyRestarted" type="checkbox" />
+        <span>Faqat qayta ishga tushganlar</span>
+      </label>
     </div>
 
     <div class="card">
@@ -107,6 +153,12 @@ function sortIndicator(key: string): string {
               <th class="sortable" @click="setSort('status')">Holat{{ sortIndicator('status') }}</th>
               <th class="sortable" @click="setSort('detail')">Tafsilot{{ sortIndicator('detail') }}</th>
               <th class="sortable" @click="setSort('reportedAt')">Oxirgi signal{{ sortIndicator('reportedAt') }}</th>
+              <th class="sortable" @click="setSort('uptimeSeconds')">
+                Kompyuter ishlagan{{ sortIndicator('uptimeSeconds') }}
+              </th>
+              <th class="sortable" @click="setSort('agentUptimeSeconds')">
+                Agent ishlagan{{ sortIndicator('agentUptimeSeconds') }}
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -120,14 +172,31 @@ function sortIndicator(key: string): string {
               <td>{{ agent.version }}</td>
               <td>
                 <span class="badge" :class="`badge--${statusKind(agent)}`">{{ STATUS_LABEL[statusKind(agent)] }}</span>
+                <span v-if="agent.recentlyRestarted" class="badge badge--restarted" title="Agent yaqinda qayta ishga tushgan">
+                  ⟳ qayta ishga tushgan
+                </span>
               </td>
               <td class="detail-cell">{{ agent.detail ?? '—' }}</td>
               <td class="nowrap" :title="formatTimestamp(agent.reportedAt)">
                 {{ formatRelative(agent.minutesSinceReport) }}
               </td>
+              <td class="nowrap" :title="bootTimeTitle(agent)">
+                {{ formatDuration(agent.uptimeSeconds) }}
+              </td>
+              <td
+                class="nowrap"
+                :class="{ 'cell-restarted': agent.recentlyRestarted }"
+                :title="
+                  agent.recentlyRestarted
+                    ? 'Agent yaqinda qayta ishga tushgan — takrorlansa, agent qulab tushayotgan bo\'lishi mumkin'
+                    : undefined
+                "
+              >
+                {{ formatDuration(agent.agentUptimeSeconds) }}
+              </td>
             </tr>
             <tr v-if="!agents.length">
-              <td colspan="6" class="empty">Hozircha hech qaysi agentdan signal kelmagan.</td>
+              <td colspan="8" class="empty">Hozircha hech qaysi agentdan signal kelmagan.</td>
             </tr>
           </tbody>
         </table>
@@ -286,6 +355,18 @@ th.sortable {
 .badge--stale {
   background: var(--color-muted-bg);
   color: var(--color-muted-fg);
+}
+
+.badge--restarted {
+  background: var(--color-warning-bg);
+  color: var(--color-warning-fg);
+  margin-left: 0.4rem;
+}
+
+.cell-restarted {
+  background: var(--color-warning-bg);
+  color: var(--color-warning-fg);
+  border-radius: 4px;
 }
 
 .empty {

@@ -130,6 +130,15 @@ class AgentStatus(Base):
     version: Mapped[str | None] = mapped_column(String(50), nullable=True)
     working: Mapped[bool] = mapped_column(Boolean)
     detail: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Ish stantsiyasi qachon yoqilgani (qayta yuklangani). Eski agentlar
+    # yubormaydi -> NULL.
+    boot_time_utc: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Ish stantsiyasining ishlab turgan vaqti (soniyalarda) — katta son bo'lishi
+    # mumkin, shuning uchun BigInteger. Eski agentlar yubormaydi -> NULL.
+    uptime_seconds: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    # Agent jarayonining o'zi qancha vaqtdan beri ishlab turgani (soniyalarda) —
+    # kichik qiymat "yaqinda qayta ishga tushgan" (ehtimol crash-loop) belgisi.
+    agent_uptime_seconds: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     reported_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
