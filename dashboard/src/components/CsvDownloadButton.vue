@@ -24,7 +24,7 @@ function handleClick() {
 
 <template>
   <div class="csv-download">
-    <button type="button" class="csv-btn" :disabled="downloading" @click="handleClick">
+    <button type="button" class="btn btn-sm csv-btn" :disabled="downloading" @click="handleClick">
       <AppIcon name="download" :size="15" />
       {{ downloading ? 'Yuklanmoqda...' : 'CSV yuklab olish' }}
     </button>
@@ -39,27 +39,10 @@ function handleClick() {
   gap: 0.6rem;
 }
 
-.csv-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  padding: 0.4rem 0.8rem;
-  border: 1px solid var(--color-border);
-  background: var(--color-surface);
-  color: var(--color-text);
-  border-radius: 6px;
-  font-size: 0.85rem;
-  cursor: pointer;
-}
-
 .csv-btn:hover:not(:disabled) {
   border-color: var(--color-accent);
   color: var(--color-accent);
-}
-
-.csv-btn:disabled {
-  opacity: 0.6;
-  cursor: default;
+  background: var(--color-accent-soft-bg);
 }
 
 .csv-error {

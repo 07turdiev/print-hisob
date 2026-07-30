@@ -56,16 +56,16 @@ const maxPages = computed(() => Math.max(1, ...props.items.map((i) => i.pages)))
 }
 
 .bar-track {
-  height: 5px;
-  border-radius: 3px;
-  background: var(--color-muted-bg);
+  height: 6px;
+  border-radius: var(--radius-pill);
+  background: var(--color-surface-2);
   overflow: hidden;
 }
 
 .bar-fill {
   height: 100%;
-  background: var(--color-accent);
-  border-radius: 3px;
+  background: var(--brand-gradient);
+  border-radius: var(--radius-pill);
 }
 
 .empty {

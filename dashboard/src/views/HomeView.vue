@@ -33,7 +33,7 @@ const periodLabel = computed(() => {
 
     <div class="highlight-grid">
       <RouterLink to="/xodimlar" class="card highlight" :class="{ danger: overLimitCount > 0 }">
-        <AppIcon name="warning" :size="22" />
+        <span class="highlight-icon"><AppIcon name="warning" :size="20" /></span>
         <div>
           <div class="highlight-value">{{ overLimitCount }}</div>
           <div class="highlight-label">Limitdan oshgan xodimlar</div>
@@ -41,7 +41,7 @@ const periodLabel = computed(() => {
       </RouterLink>
 
       <RouterLink to="/jurnal" class="card highlight" :class="{ warn: unmatchedCount > 0 }">
-        <AppIcon name="user" :size="22" />
+        <span class="highlight-icon"><AppIcon name="user" :size="20" /></span>
         <div>
           <div class="highlight-value">{{ unmatchedCount }}</div>
           <div class="highlight-label">Noma'lum foydalanuvchilar</div>
@@ -49,7 +49,7 @@ const periodLabel = computed(() => {
       </RouterLink>
 
       <RouterLink to="/bolimlar" class="card highlight">
-        <AppIcon name="departments" :size="22" />
+        <span class="highlight-icon"><AppIcon name="departments" :size="20" /></span>
         <div>
           <div class="highlight-value">{{ topDepartment?.name ?? '-' }}</div>
           <div class="highlight-label">Eng ko'p chop etgan bo'lim</div>
@@ -57,7 +57,7 @@ const periodLabel = computed(() => {
       </RouterLink>
 
       <RouterLink v-if="adSyncStatus?.isStale" to="/xodimlar" class="card highlight warn" :title="adSyncLabel">
-        <AppIcon name="warning" :size="22" />
+        <span class="highlight-icon"><AppIcon name="warning" :size="20" /></span>
         <div>
           <div class="highlight-value">AD sinxroni eskirgan</div>
           <div class="highlight-label">{{ adSyncLabel }}</div>
@@ -98,7 +98,7 @@ const periodLabel = computed(() => {
   background: var(--color-danger-bg);
   color: var(--color-danger-fg);
   padding: 0.6rem 1rem;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   margin: 0;
 }
 
@@ -114,24 +114,34 @@ const periodLabel = computed(() => {
   gap: 0.9rem;
   text-decoration: none;
   color: var(--color-text);
-  transition: border-color 0.15s ease;
 }
 
-.highlight:hover {
-  border-color: var(--color-accent);
+.highlight-icon {
+  flex-shrink: 0;
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: var(--radius-sm);
+  background: var(--color-accent-soft-bg);
+  color: var(--color-accent-soft-fg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
-.highlight.danger {
-  border-color: var(--color-danger-fg);
+.highlight.danger .highlight-icon {
+  background: var(--color-danger-bg);
+  color: var(--color-danger-fg);
 }
 
-.highlight.warn {
-  border-color: var(--color-warning-fg);
+.highlight.warn .highlight-icon {
+  background: var(--color-warning-bg);
+  color: var(--color-warning-fg);
 }
 
 .highlight-value {
   font-size: 1.4rem;
   font-weight: 700;
+  font-variant-numeric: tabular-nums;
 }
 
 .highlight-label {
@@ -154,7 +164,7 @@ const periodLabel = computed(() => {
 }
 
 .link-card:hover {
-  border-color: var(--color-accent);
+  color: var(--color-accent-hover);
 }
 
 .loading-hint {
@@ -163,9 +173,10 @@ const periodLabel = computed(() => {
   right: 1rem;
   background: var(--color-surface);
   border: 1px solid var(--color-border);
-  padding: 0.4rem 0.8rem;
-  border-radius: 8px;
+  box-shadow: var(--shadow-pop);
+  padding: 0.45rem 0.9rem;
+  border-radius: var(--radius-pill);
   color: var(--color-text-muted);
-  font-size: 0.85rem;
+  font-size: 0.82rem;
 }
 </style>

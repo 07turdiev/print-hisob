@@ -30,7 +30,8 @@ const percent = computed(() => {
   display: flex;
   justify-content: space-between;
   font-size: 0.82rem;
-  margin-bottom: 0.25rem;
+  margin-bottom: 0.3rem;
+  font-variant-numeric: tabular-nums;
 }
 
 .negative {
@@ -39,16 +40,17 @@ const percent = computed(() => {
 }
 
 .bar-track {
-  height: 6px;
-  border-radius: 3px;
-  background: var(--color-muted-bg);
+  height: 8px;
+  border-radius: var(--radius-pill);
+  background: var(--color-surface-2);
   overflow: hidden;
 }
 
 .bar-fill {
   height: 100%;
-  background: var(--color-accent);
-  border-radius: 3px;
+  border-radius: var(--radius-pill);
+  background: var(--brand-gradient);
+  transition: width var(--transition);
 }
 
 .bar-fill.over {

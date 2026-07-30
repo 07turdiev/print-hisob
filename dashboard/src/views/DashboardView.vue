@@ -93,7 +93,7 @@ function handleQuotaSave(login: string, allocatedPages: number) {
   background: var(--color-danger-bg);
   color: var(--color-danger-fg);
   padding: 0.6rem 1rem;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   margin: 0;
 }
 
@@ -103,9 +103,10 @@ function handleQuotaSave(login: string, allocatedPages: number) {
   right: 1rem;
   background: var(--color-surface);
   border: 1px solid var(--color-border);
-  padding: 0.4rem 0.8rem;
-  border-radius: 8px;
+  box-shadow: var(--shadow-pop);
+  padding: 0.45rem 0.9rem;
+  border-radius: var(--radius-pill);
   color: var(--color-text-muted);
-  font-size: 0.85rem;
+  font-size: 0.82rem;
 }
 </style>

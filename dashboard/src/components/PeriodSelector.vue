@@ -72,11 +72,6 @@ const isQuarter = computed(() => store.periodType === 'quarter')
 }
 
 select {
-  padding: 0.35rem 0.55rem;
-  border: 1px solid var(--color-border);
-  border-radius: 6px;
-  background: var(--color-surface);
-  color: var(--color-text);
   font-size: 0.85rem;
 }
 
@@ -91,20 +86,30 @@ select {
 .quarter-buttons {
   display: flex;
   gap: 0.3rem;
+  padding: 0.2rem;
+  background: var(--color-surface-2);
+  border-radius: var(--radius-sm);
 }
 
 .quarter-btn {
-  padding: 0.35rem 0.65rem;
-  border: 1px solid var(--color-border);
-  border-radius: 6px;
-  background: var(--color-surface);
+  height: 28px;
+  padding: 0 0.7rem;
+  border: none;
+  border-radius: calc(var(--radius-sm) - 2px);
+  background: transparent;
+  color: var(--color-text-muted);
+  font-size: 0.82rem;
+  font-weight: 600;
+  transition: background-color var(--transition), color var(--transition);
+}
+
+.quarter-btn:hover {
   color: var(--color-text);
-  font-size: 0.85rem;
 }
 
 .quarter-btn.active {
-  background: var(--color-accent);
-  border-color: var(--color-accent);
-  color: var(--color-accent-fg);
+  background: var(--color-surface);
+  color: var(--color-accent-soft-fg);
+  box-shadow: var(--shadow-sm);
 }
 </style>

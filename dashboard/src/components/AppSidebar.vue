@@ -69,30 +69,32 @@ const NAV_ITEMS = [
 .sidebar-header {
   display: flex;
   align-items: center;
-  gap: 0.65rem;
+  gap: 0.7rem;
   padding: 1.1rem 1.1rem;
   border-bottom: 1px solid var(--color-border);
   min-height: 2.5rem;
 }
 
 .brand-mark {
-  width: 2.1rem;
-  height: 2.1rem;
+  width: 2.15rem;
+  height: 2.15rem;
   flex-shrink: 0;
-  border-radius: 7px;
-  background: var(--color-accent);
-  color: var(--color-accent-fg);
+  border-radius: var(--radius-sm);
+  background: var(--brand-gradient);
+  color: #ffffff;
   display: flex;
   align-items: center;
   justify-content: center;
   font-weight: 700;
   font-size: 0.82rem;
+  box-shadow: 0 2px 8px rgba(99, 102, 241, 0.4);
 }
 
 .brand-title {
   font-weight: 700;
   font-size: 1rem;
   white-space: nowrap;
+  color: var(--color-text);
 }
 
 .nav {
@@ -105,26 +107,47 @@ const NAV_ITEMS = [
 }
 
 .nav-item {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 0.75rem;
   padding: 0.55rem 0.7rem;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   color: var(--color-text-muted);
   text-decoration: none;
   font-weight: 600;
   font-size: 0.88rem;
   white-space: nowrap;
+  transition: background-color var(--transition), color var(--transition);
+}
+
+.sidebar.collapsed .nav-item {
+  justify-content: center;
 }
 
 .nav-item:hover {
-  background: var(--color-muted-bg);
+  background: var(--color-accent-soft-bg);
   color: var(--color-text);
 }
 
 .nav-item.active {
+  background: var(--color-accent-soft-bg);
+  color: var(--color-accent-soft-fg);
+}
+
+.nav-item.active::before {
+  content: '';
+  position: absolute;
+  left: -0.75rem;
+  top: 0.35rem;
+  bottom: 0.35rem;
+  width: 3px;
+  border-radius: var(--radius-pill);
   background: var(--color-accent);
-  color: var(--color-accent-fg);
+}
+
+.sidebar.collapsed .nav-item.active::before {
+  left: 0;
 }
 
 .collapse-btn {
@@ -135,16 +158,17 @@ const NAV_ITEMS = [
   margin: 0.75rem;
   padding: 0.5rem;
   border: 1px solid var(--color-border);
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--color-text-muted);
   font-size: 0.8rem;
   font-weight: 600;
+  transition: background-color var(--transition), color var(--transition);
 }
 
 .collapse-btn:hover {
-  background: var(--color-muted-bg);
-  color: var(--color-text);
+  background: var(--color-accent-soft-bg);
+  color: var(--color-accent-soft-fg);
 }
 
 .sidebar-backdrop {
@@ -157,7 +181,7 @@ const NAV_ITEMS = [
     left: 0;
     top: 0;
     transform: translateX(-100%);
-    box-shadow: 0 0 24px rgba(0, 0, 0, 0.25);
+    box-shadow: var(--shadow-lg);
   }
 
   .sidebar.mobile-open {

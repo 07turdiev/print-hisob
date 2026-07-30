@@ -151,8 +151,8 @@ function sortIndicator(key: SortKey): string {
                   @keyup.enter="confirmEdit(emp.login)"
                   @keyup.escape="cancelEdit"
                 />
-                <button class="icon-btn" :disabled="saving" @click="confirmEdit(emp.login)">Saqlash</button>
-                <button class="icon-btn muted-btn" @click="cancelEdit">Bekor</button>
+                <button class="btn btn-primary btn-sm quota-action" :disabled="saving" @click="confirmEdit(emp.login)">Saqlash</button>
+                <button class="btn btn-ghost btn-sm quota-action" @click="cancelEdit">Bekor</button>
               </template>
               <template v-else>
                 <span class="editable" @click="startEdit(emp)">{{ emp.allocated }}</span>
@@ -187,21 +187,17 @@ function sortIndicator(key: SortKey): string {
   margin: 0;
 }
 
-.table-wrap {
-  overflow-x: auto;
-}
-
 th.sortable {
   cursor: pointer;
-}
-
-.num {
-  text-align: right;
 }
 
 .muted {
   color: var(--color-text-muted);
   font-size: 0.8rem;
+}
+
+.employee-name {
+  font-weight: 600;
 }
 
 .employee-login {
@@ -226,33 +222,24 @@ th.sortable {
 }
 
 .editable {
-  border-bottom: 1px dashed var(--color-text-muted);
+  border-bottom: 1px dashed var(--color-border-strong);
   cursor: pointer;
+  font-weight: 600;
+}
+
+.editable:hover {
+  color: var(--color-accent-soft-fg);
+  border-color: var(--color-accent);
 }
 
 .quota-input {
   width: 5rem;
-  padding: 0.2rem 0.4rem;
-  border: 1px solid var(--color-border);
-  border-radius: 4px;
-  background: var(--color-surface);
-  color: var(--color-text);
+  height: 30px;
+  padding: 0 0.4rem;
 }
 
-.icon-btn {
+.quota-action {
   margin-left: 0.35rem;
-  padding: 0.2rem 0.5rem;
-  border: 1px solid var(--color-accent);
-  background: var(--color-accent);
-  color: var(--color-accent-fg);
-  border-radius: 4px;
-  font-size: 0.78rem;
-}
-
-.icon-btn.muted-btn {
-  background: transparent;
-  border-color: var(--color-border);
-  color: var(--color-text);
 }
 
 .empty {

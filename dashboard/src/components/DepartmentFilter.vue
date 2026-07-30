@@ -41,11 +41,6 @@ label {
 }
 
 select {
-  padding: 0.4rem 0.6rem;
-  border: 1px solid var(--color-border);
-  border-radius: 6px;
-  background: var(--color-surface);
-  color: var(--color-text);
   min-width: 9rem;
 }
 </style>

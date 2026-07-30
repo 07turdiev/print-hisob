@@ -50,13 +50,14 @@ const maxCount = computed(() => Math.max(1, ...props.failures.map((f) => f.count
 
 .bar-track {
   height: 6px;
-  border-radius: 3px;
-  background: var(--color-muted-bg);
+  border-radius: var(--radius-pill);
+  background: var(--color-surface-2);
   overflow: hidden;
 }
 
 .bar-fill {
   height: 100%;
+  border-radius: var(--radius-pill);
   background: var(--color-danger-fg);
 }
 

@@ -76,7 +76,7 @@ function handleSave(login: string, allocatedPages: number) {
   background: var(--color-danger-bg);
   color: var(--color-danger-fg);
   padding: 0.6rem 1rem;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   margin: 0;
 }
 
@@ -92,16 +92,25 @@ function handleSave(login: string, allocatedPages: number) {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  padding: 0.4rem 0.7rem;
+  padding: 0 0.7rem;
   border: 1px solid var(--color-border);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   color: var(--color-text-muted);
   min-width: 18rem;
   flex: 1;
+  height: 36px;
+  transition: border-color var(--transition), box-shadow var(--transition);
+}
+
+.search-box:focus-within {
+  border-color: var(--color-accent);
+  box-shadow: var(--focus-ring);
 }
 
 .search-box input {
   border: none;
+  height: auto;
+  padding: 0;
   background: transparent;
   color: var(--color-text);
   flex: 1;
@@ -110,6 +119,7 @@ function handleSave(login: string, allocatedPages: number) {
 
 .search-box input:focus {
   outline: none;
+  box-shadow: none;
 }
 
 .group {
@@ -125,11 +135,6 @@ function handleSave(login: string, allocatedPages: number) {
 }
 
 .group select {
-  padding: 0.4rem 0.6rem;
-  border: 1px solid var(--color-border);
-  border-radius: 6px;
-  background: var(--color-surface);
-  color: var(--color-text);
   min-width: 9rem;
 }
 
@@ -139,10 +144,11 @@ function handleSave(login: string, allocatedPages: number) {
   right: 1rem;
   background: var(--color-surface);
   border: 1px solid var(--color-border);
-  padding: 0.4rem 0.8rem;
-  border-radius: 8px;
+  box-shadow: var(--shadow-pop);
+  padding: 0.45rem 0.9rem;
+  border-radius: var(--radius-pill);
   color: var(--color-text-muted);
-  font-size: 0.85rem;
+  font-size: 0.82rem;
 }
 
 .quota-hint {

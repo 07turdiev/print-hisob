@@ -58,8 +58,8 @@ function logout() {
 .top-bar {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
-  padding: 0.6rem 1.25rem;
+  gap: 0.9rem;
+  padding: 0.7rem 1.5rem;
   border-bottom: 1px solid var(--color-border);
   background: var(--color-surface);
   position: sticky;
@@ -68,8 +68,9 @@ function logout() {
 }
 
 .page-title {
-  font-size: 1.05rem;
+  font-size: 1.2rem;
   font-weight: 700;
+  letter-spacing: -0.01em;
   margin: 0;
   white-space: nowrap;
 }
@@ -94,16 +95,17 @@ function logout() {
   justify-content: center;
   width: 2.15rem;
   height: 2.15rem;
-  border: 1px solid var(--color-border);
-  border-radius: 8px;
-  background: var(--color-surface);
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
   color: var(--color-text-muted);
   flex-shrink: 0;
+  transition: background-color var(--transition), color var(--transition);
 }
 
 .icon-btn:hover {
-  background: var(--color-muted-bg);
-  color: var(--color-text);
+  background: var(--color-accent-soft-bg);
+  color: var(--color-accent-soft-fg);
 }
 
 .user-menu {
@@ -116,15 +118,17 @@ function logout() {
   gap: 0.45rem;
   padding: 0.35rem 0.6rem;
   border: 1px solid var(--color-border);
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   background: var(--color-surface);
   color: var(--color-text);
   font-size: 0.85rem;
   font-weight: 600;
+  transition: background-color var(--transition), border-color var(--transition);
 }
 
 .user-btn:hover {
-  background: var(--color-muted-bg);
+  background: var(--color-surface-2);
+  border-color: var(--color-border-strong);
 }
 
 .avatar {
@@ -134,8 +138,8 @@ function logout() {
   width: 1.5rem;
   height: 1.5rem;
   border-radius: 50%;
-  background: var(--color-muted-bg);
-  color: var(--color-text-muted);
+  background: var(--color-accent-soft-bg);
+  color: var(--color-accent-soft-fg);
 }
 
 .username {
@@ -148,13 +152,13 @@ function logout() {
 .dropdown {
   position: absolute;
   right: 0;
-  top: calc(100% + 0.4rem);
-  min-width: 9rem;
+  top: calc(100% + 0.5rem);
+  min-width: 9.5rem;
   background: var(--color-surface);
   border: 1px solid var(--color-border);
-  border-radius: 8px;
-  box-shadow: var(--shadow-card);
-  padding: 0.3rem;
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-pop);
+  padding: 0.35rem;
   z-index: 30;
 }
 
@@ -169,8 +173,9 @@ function logout() {
   color: var(--color-danger-fg);
   font-size: 0.85rem;
   font-weight: 600;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   text-align: left;
+  transition: background-color var(--transition);
 }
 
 .dropdown-item:hover {

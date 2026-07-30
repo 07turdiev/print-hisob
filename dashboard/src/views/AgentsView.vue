@@ -3,6 +3,14 @@ import { useAgentsPage } from '../composables/useAgentsPage'
 import type { Agent } from '../api/types'
 import AppIcon from '../components/AppIcon.vue'
 
+const KPI_ICONS = {
+  total: 'agents',
+  working: 'check-circle',
+  error: 'warning',
+  stale: 'warning',
+  restarted: 'refresh',
+} as const
+
 const {
   search,
   onlyErrors,
@@ -93,30 +101,51 @@ function sortIndicator(key: string): string {
 
     <div class="kpi-grid">
       <div class="card kpi">
-        <span class="kpi-label">Jami agentlar</span>
-        <span class="kpi-value">{{ fmt(summary?.total) }}</span>
+        <span class="kpi-icon"><AppIcon :name="KPI_ICONS.total" :size="18" /></span>
+        <div class="kpi-body">
+          <span class="kpi-label">Jami agentlar</span>
+          <span class="kpi-value">{{ fmt(summary?.total) }}</span>
+        </div>
       </div>
       <div class="card kpi">
-        <span class="kpi-label">Ishlayapti</span>
-        <span class="kpi-value kpi-ok">{{ fmt(summary?.working) }}</span>
+        <span class="kpi-icon kpi-icon--ok"><AppIcon :name="KPI_ICONS.working" :size="18" /></span>
+        <div class="kpi-body">
+          <span class="kpi-label">Ishlayapti</span>
+          <span class="kpi-value kpi-ok">{{ fmt(summary?.working) }}</span>
+        </div>
       </div>
       <div class="card kpi" :class="{ 'kpi-alert': (summary?.notWorking ?? 0) > 0 }">
-        <span class="kpi-label">Xato</span>
-        <span class="kpi-value" :class="{ 'kpi-danger': (summary?.notWorking ?? 0) > 0 }">
-          {{ fmt(summary?.notWorking) }}
+        <span class="kpi-icon" :class="{ 'kpi-icon--danger': (summary?.notWorking ?? 0) > 0 }">
+          <AppIcon :name="KPI_ICONS.error" :size="18" />
         </span>
+        <div class="kpi-body">
+          <span class="kpi-label">Xato</span>
+          <span class="kpi-value" :class="{ 'kpi-danger': (summary?.notWorking ?? 0) > 0 }">
+            {{ fmt(summary?.notWorking) }}
+          </span>
+        </div>
       </div>
       <div class="card kpi" :class="{ 'kpi-alert': (summary?.stale ?? 0) > 0 }">
-        <span class="kpi-label">Aloqa yo'q</span>
-        <span class="kpi-value" :class="{ 'kpi-warning': (summary?.stale ?? 0) > 0 }">
-          {{ fmt(summary?.stale) }}
+        <span class="kpi-icon" :class="{ 'kpi-icon--warning': (summary?.stale ?? 0) > 0 }">
+          <AppIcon :name="KPI_ICONS.stale" :size="18" />
         </span>
+        <div class="kpi-body">
+          <span class="kpi-label">Aloqa yo'q</span>
+          <span class="kpi-value" :class="{ 'kpi-warning': (summary?.stale ?? 0) > 0 }">
+            {{ fmt(summary?.stale) }}
+          </span>
+        </div>
       </div>
       <div class="card kpi" :class="{ 'kpi-alert': (summary?.recentlyRestarted ?? 0) > 0 }">
-        <span class="kpi-label">Yaqinda qayta ishga tushgan</span>
-        <span class="kpi-value" :class="{ 'kpi-warning': (summary?.recentlyRestarted ?? 0) > 0 }">
-          {{ fmt(summary?.recentlyRestarted) }}
+        <span class="kpi-icon" :class="{ 'kpi-icon--warning': (summary?.recentlyRestarted ?? 0) > 0 }">
+          <AppIcon :name="KPI_ICONS.restarted" :size="18" />
         </span>
+        <div class="kpi-body">
+          <span class="kpi-label">Yaqinda qayta ishga tushgan</span>
+          <span class="kpi-value" :class="{ 'kpi-warning': (summary?.recentlyRestarted ?? 0) > 0 }">
+            {{ fmt(summary?.recentlyRestarted) }}
+          </span>
+        </div>
       </div>
     </div>
 
@@ -221,31 +250,67 @@ function sortIndicator(key: string): string {
   background: var(--color-danger-bg);
   color: var(--color-danger-fg);
   padding: 0.6rem 1rem;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   margin: 0;
 }
 
 .kpi-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
   gap: 1rem;
 }
 
 .kpi {
   display: flex;
+  align-items: center;
+  gap: 0.9rem;
+}
+
+.kpi-icon {
+  flex-shrink: 0;
+  width: 2.6rem;
+  height: 2.6rem;
+  border-radius: var(--radius-sm);
+  background: var(--color-accent-soft-bg);
+  color: var(--color-accent-soft-fg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.kpi-icon--ok {
+  background: var(--color-success-bg);
+  color: var(--color-success-fg);
+}
+
+.kpi-icon--danger {
+  background: var(--color-danger-bg);
+  color: var(--color-danger-fg);
+}
+
+.kpi-icon--warning {
+  background: var(--color-warning-bg);
+  color: var(--color-warning-fg);
+}
+
+.kpi-body {
+  display: flex;
   flex-direction: column;
-  gap: 0.35rem;
+  gap: 0.3rem;
+  min-width: 0;
 }
 
 .kpi-label {
-  font-size: 0.8rem;
+  font-size: 0.78rem;
   color: var(--color-text-muted);
   font-weight: 600;
 }
 
 .kpi-value {
-  font-size: 1.8rem;
+  font-size: 1.65rem;
   font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
 }
 
 .kpi-ok {
@@ -276,16 +341,25 @@ function sortIndicator(key: string): string {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  padding: 0.4rem 0.7rem;
+  padding: 0 0.7rem;
   border: 1px solid var(--color-border);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   color: var(--color-text-muted);
   min-width: 18rem;
   flex: 1;
+  height: 36px;
+  transition: border-color var(--transition), box-shadow var(--transition);
+}
+
+.search-box:focus-within {
+  border-color: var(--color-accent);
+  box-shadow: var(--focus-ring);
 }
 
 .search-box input {
   border: none;
+  height: auto;
+  padding: 0;
   background: transparent;
   color: var(--color-text);
   flex: 1;
@@ -294,6 +368,7 @@ function sortIndicator(key: string): string {
 
 .search-box input:focus {
   outline: none;
+  box-shadow: none;
 }
 
 .toggle {
@@ -304,10 +379,6 @@ function sortIndicator(key: string): string {
   font-weight: 600;
   color: var(--color-text-muted);
   white-space: nowrap;
-}
-
-.table-wrap {
-  overflow-x: auto;
 }
 
 th.sortable {
@@ -334,12 +405,24 @@ th.sortable {
 }
 
 .badge {
-  display: inline-block;
-  padding: 0.15rem 0.55rem;
-  border-radius: 999px;
-  font-size: 0.75rem;
-  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.2rem 0.6rem;
+  border-radius: var(--radius-pill);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
   white-space: nowrap;
+}
+
+.badge::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  flex-shrink: 0;
 }
 
 .badge--ok {
@@ -366,7 +449,7 @@ th.sortable {
 .cell-restarted {
   background: var(--color-warning-bg);
   color: var(--color-warning-fg);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
 }
 
 .empty {
@@ -381,9 +464,10 @@ th.sortable {
   right: 1rem;
   background: var(--color-surface);
   border: 1px solid var(--color-border);
-  padding: 0.4rem 0.8rem;
-  border-radius: 8px;
+  box-shadow: var(--shadow-pop);
+  padding: 0.45rem 0.9rem;
+  border-radius: var(--radius-pill);
   color: var(--color-text-muted);
-  font-size: 0.85rem;
+  font-size: 0.82rem;
 }
 </style>

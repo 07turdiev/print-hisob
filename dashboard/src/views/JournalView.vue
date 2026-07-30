@@ -118,9 +118,9 @@ function formatTimestamp(iso: string): string {
       <div class="pagination">
         <span class="total-hint">Jami: {{ total }} ta yozuv</span>
         <div class="pager">
-          <button type="button" :disabled="page <= 1" @click="prevPage">&larr; Oldingi</button>
+          <button type="button" class="btn btn-sm" :disabled="page <= 1" @click="prevPage">&larr; Oldingi</button>
           <span>{{ page }} / {{ totalPages }}</span>
-          <button type="button" :disabled="page >= totalPages" @click="nextPage">Keyingi &rarr;</button>
+          <button type="button" class="btn btn-sm" :disabled="page >= totalPages" @click="nextPage">Keyingi &rarr;</button>
         </div>
       </div>
     </div>
@@ -143,7 +143,7 @@ function formatTimestamp(iso: string): string {
   background: var(--color-danger-bg);
   color: var(--color-danger-fg);
   padding: 0.6rem 1rem;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   margin: 0;
 }
 
@@ -165,22 +165,9 @@ function formatTimestamp(iso: string): string {
 
 .field input,
 .field select {
-  padding: 0.4rem 0.6rem;
-  border: 1px solid var(--color-border);
-  border-radius: 6px;
-  background: var(--color-surface);
-  color: var(--color-text);
   font-weight: 400;
   font-size: 0.88rem;
   min-width: 8.5rem;
-}
-
-.table-wrap {
-  overflow-x: auto;
-}
-
-.num {
-  text-align: right;
 }
 
 .nowrap {
@@ -214,7 +201,7 @@ function formatTimestamp(iso: string): string {
 }
 
 .duplex-yes {
-  color: var(--color-accent);
+  color: var(--color-accent-soft-fg);
   font-weight: 600;
   font-size: 0.82rem;
 }
@@ -224,16 +211,26 @@ function formatTimestamp(iso: string): string {
   font-size: 0.82rem;
 }
 
+.ok-tag,
+.fail-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.2rem 0.6rem;
+  border-radius: var(--radius-pill);
+  font-weight: 700;
+  font-size: 0.72rem;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
 .ok-tag {
+  background: var(--color-success-bg);
   color: var(--color-success-fg);
-  font-weight: 600;
-  font-size: 0.82rem;
 }
 
 .fail-tag {
+  background: var(--color-danger-bg);
   color: var(--color-danger-fg);
-  font-weight: 600;
-  font-size: 0.82rem;
 }
 
 .empty {
@@ -259,29 +256,16 @@ function formatTimestamp(iso: string): string {
   gap: 0.75rem;
 }
 
-.pager button {
-  padding: 0.35rem 0.75rem;
-  border: 1px solid var(--color-border);
-  border-radius: 6px;
-  background: var(--color-surface);
-  color: var(--color-text);
-  font-size: 0.85rem;
-}
-
-.pager button:disabled {
-  opacity: 0.5;
-  cursor: default;
-}
-
 .loading-hint {
   position: fixed;
   bottom: 1rem;
   right: 1rem;
   background: var(--color-surface);
   border: 1px solid var(--color-border);
-  padding: 0.4rem 0.8rem;
-  border-radius: 8px;
+  box-shadow: var(--shadow-pop);
+  padding: 0.45rem 0.9rem;
+  border-radius: var(--radius-pill);
   color: var(--color-text-muted);
-  font-size: 0.85rem;
+  font-size: 0.82rem;
 }
 </style>

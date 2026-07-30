@@ -44,13 +44,15 @@ const message = computed(() => {
   display: flex;
   align-items: center;
   gap: 0.55rem;
-  padding: 0.55rem 1rem;
+  padding: 0.6rem 1rem;
   font-size: 0.85rem;
-  color: var(--color-text-muted);
+  color: var(--color-accent-soft-fg);
+  background: var(--color-accent-soft-bg);
+  border-color: transparent;
+  box-shadow: none;
 }
 
 .ad-sync-banner.stale {
-  border-color: var(--color-warning-fg);
   background: var(--color-warning-bg);
   color: var(--color-warning-fg);
   font-weight: 600;

@@ -54,7 +54,7 @@ async function submit() {
 
       <p v-if="error" class="error-banner">{{ error }}</p>
 
-      <button type="submit" class="submit-btn" :disabled="loading">
+      <button type="submit" class="btn btn-primary submit-btn" :disabled="loading">
         {{ loading ? 'Tekshirilmoqda...' : 'Kirish' }}
       </button>
     </form>
@@ -67,44 +67,54 @@ async function submit() {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--color-bg);
   padding: 1.5rem;
+  position: relative;
+  overflow: hidden;
+  background:
+    radial-gradient(60% 55% at 15% 10%, rgba(99, 102, 241, 0.22), transparent 60%),
+    radial-gradient(55% 50% at 88% 88%, rgba(139, 92, 246, 0.2), transparent 60%),
+    var(--color-bg);
 }
 
 .login-card {
+  position: relative;
   width: 100%;
-  max-width: 360px;
+  max-width: 380px;
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  gap: 1.15rem;
+  padding: 2.25rem 2rem;
+  box-shadow: var(--shadow-lg);
 }
 
 .brand {
   display: flex;
   align-items: center;
-  gap: 0.65rem;
+  gap: 0.75rem;
 }
 
 .brand-mark {
-  width: 2.5rem;
-  height: 2.5rem;
-  border-radius: 8px;
-  background: var(--color-accent);
-  color: var(--color-accent-fg);
+  width: 2.75rem;
+  height: 2.75rem;
+  border-radius: var(--radius);
+  background: var(--brand-gradient);
+  color: #ffffff;
   display: flex;
   align-items: center;
   justify-content: center;
   font-weight: 700;
-  font-size: 0.95rem;
+  font-size: 1rem;
+  box-shadow: 0 4px 14px rgba(99, 102, 241, 0.4);
 }
 
 .brand h1 {
-  font-size: 1.15rem;
+  font-size: 1.2rem;
   margin: 0;
+  letter-spacing: -0.01em;
 }
 
 .subtitle {
-  margin: -0.5rem 0 0;
+  margin: -0.6rem 0 0;
   color: var(--color-text-muted);
   font-size: 0.88rem;
 }
@@ -119,41 +129,22 @@ async function submit() {
 }
 
 .field input {
-  padding: 0.55rem 0.7rem;
-  border: 1px solid var(--color-border);
-  border-radius: 8px;
-  background: var(--color-surface);
-  color: var(--color-text);
   font-weight: 400;
   font-size: 0.95rem;
 }
 
-.field input:focus {
-  outline: 2px solid var(--color-accent);
-  outline-offset: 1px;
-}
-
 .submit-btn {
-  padding: 0.65rem 1rem;
-  border: none;
-  border-radius: 8px;
-  background: var(--color-accent);
-  color: var(--color-accent-fg);
-  font-weight: 700;
+  width: 100%;
   font-size: 0.95rem;
-}
-
-.submit-btn:disabled {
-  opacity: 0.65;
-  cursor: default;
+  margin-top: 0.25rem;
 }
 
 .error-banner {
   margin: 0;
   background: var(--color-danger-bg);
   color: var(--color-danger-fg);
-  padding: 0.5rem 0.75rem;
-  border-radius: 8px;
+  padding: 0.55rem 0.8rem;
+  border-radius: var(--radius-sm);
   font-size: 0.85rem;
 }
 </style>
