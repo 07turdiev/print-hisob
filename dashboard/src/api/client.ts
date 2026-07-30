@@ -1,6 +1,7 @@
 import router from '../router'
 import { useAuthStore } from '../stores/auth'
 import type {
+  AdSyncStatus,
   Agent,
   AgentQuery,
   AgentsSummary,
@@ -288,4 +289,10 @@ export function getAgents(query: AgentQuery = {}): Promise<Agent[]> {
 
 export function getAgentsSummary(): Promise<AgentsSummary> {
   return request<AgentsSummary>('/api/agents/summary')
+}
+
+// --- AD sync status --------------------------------------------------------
+
+export function getAdSyncStatus(): Promise<AdSyncStatus> {
+  return request<AdSyncStatus>('/api/ad-sync/status')
 }

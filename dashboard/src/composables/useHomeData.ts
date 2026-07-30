@@ -3,6 +3,7 @@ import { storeToRefs } from 'pinia'
 import { ApiError, getDepartmentStats, getEmployeeStats, getSummary, getTimeseries } from '../api/client'
 import type { DepartmentStat, EmployeeStat, StatsSummary, TimeseriesPoint } from '../api/types'
 import { usePeriodStore } from '../stores/period'
+import { useAdSyncStatus } from './useAdSyncStatus'
 
 /** Loads the compact overview panel shown on the Bosh sahifa (home) page. */
 export function useHomeData() {
@@ -13,6 +14,8 @@ export function useHomeData() {
   const timeseries = ref<TimeseriesPoint[]>([])
   const employees = ref<EmployeeStat[]>([])
   const departments = ref<DepartmentStat[]>([])
+  /** AD sync health; independent of the selected period, fetched once on load. */
+  const { status: adSyncStatus } = useAdSyncStatus()
 
   const loading = ref(false)
   const error = ref<string | null>(null)
@@ -48,5 +51,5 @@ export function useHomeData() {
     return [...departments.value].sort((a, b) => b.pages - a.pages)[0]
   })
 
-  return { summary, timeseries, overLimitCount, unmatchedCount, topDepartment, loading, error }
+  return { summary, timeseries, overLimitCount, unmatchedCount, topDepartment, adSyncStatus, loading, error }
 }

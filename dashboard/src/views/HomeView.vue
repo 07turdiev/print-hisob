@@ -2,11 +2,19 @@
 import { computed } from 'vue'
 import { RouterLink } from 'vue-router'
 import { useHomeData } from '../composables/useHomeData'
+import { formatRelativeMinutes } from '../utils/time'
 import KpiCards from '../components/KpiCards.vue'
 import TimeseriesChart from '../components/TimeseriesChart.vue'
 import AppIcon from '../components/AppIcon.vue'
 
-const { summary, timeseries, overLimitCount, unmatchedCount, topDepartment, loading, error } = useHomeData()
+const { summary, timeseries, overLimitCount, unmatchedCount, topDepartment, adSyncStatus, loading, error } =
+  useHomeData()
+
+const adSyncLabel = computed(() => {
+  if (!adSyncStatus.value) return ''
+  if (adSyncStatus.value.employeeCount === 0) return "Xodimlar hali yuklanmagan"
+  return `Oxirgi sinxron: ${formatRelativeMinutes(adSyncStatus.value.minutesSinceSync)}`
+})
 
 const periodLabel = computed(() => {
   if (!summary.value) return ''
@@ -45,6 +53,14 @@ const periodLabel = computed(() => {
         <div>
           <div class="highlight-value">{{ topDepartment?.name ?? '-' }}</div>
           <div class="highlight-label">Eng ko'p chop etgan bo'lim</div>
+        </div>
+      </RouterLink>
+
+      <RouterLink v-if="adSyncStatus?.isStale" to="/xodimlar" class="card highlight warn" :title="adSyncLabel">
+        <AppIcon name="warning" :size="22" />
+        <div>
+          <div class="highlight-value">AD sinxroni eskirgan</div>
+          <div class="highlight-label">{{ adSyncLabel }}</div>
         </div>
       </RouterLink>
     </div>

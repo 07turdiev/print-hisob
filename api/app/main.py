@@ -19,6 +19,7 @@ from app.db import Base, engine, get_session
 from app.models import AgentStatus, Employee, EmployeeQuota, PrintJob
 from app.periods import Period, PeriodType, default_quota_for, period_bounds, period_label
 from app.schemas import (
+    AdSyncStatusOut,
     AgentOut,
     AgentsSummaryOut,
     AgentStatusIn,
@@ -451,6 +452,56 @@ async def list_employees(
 
     stmt = stmt.limit(limit).offset(offset)
     return list((await session.scalars(stmt)).all())
+
+
+@app.get(
+    "/api/ad-sync/status",
+    response_model=AdSyncStatusOut,
+    dependencies=[Security(require_user)],
+    tags=["employees"],
+    summary="AD sinxronizatsiyasining so'nggi holati",
+    response_description="AD'dan ma'lumot oxirgi marta qachon kelgani va 'eskirgan' (stale) belgisi",
+    responses=USER_UNAUTHORIZED_RESPONSE,
+)
+async def ad_sync_status(session: AsyncSession = Depends(get_session)) -> AdSyncStatusOut:
+    """`MAX(employees.synced_at)` — soatlik AD sinxronizatsiya skripti oxirgi marta
+    qachon ma'lumot yuborgani (har bir `POST /api/ad-sync` xodimning `synced_at`
+    maydonini yangilaydi). Bu vaqt juda eski bo'lsa (yoki umuman xodim bo'lmasa),
+    sinxronizatsiya to'xtagan bo'lishi mumkin — dashboard shuni ogohlantiradi.
+    """
+    last_synced_expr = func.max(Employee.synced_at)
+    stale_cutoff = func.now() - literal(timedelta(minutes=settings.ad_sync_stale_minutes))
+
+    stmt = select(
+        last_synced_expr.label("last_synced_at"),
+        func.count().label("employee_count"),
+        func.coalesce(
+            func.sum(case((Employee.is_active.is_(True), 1), else_=0)), 0
+        ).label("active_count"),
+        cast(
+            func.floor(func.extract("epoch", func.now() - last_synced_expr) / 60), Integer
+        ).label("minutes_since_sync"),
+        or_(func.count() == 0, last_synced_expr < stale_cutoff).label("is_stale"),
+    )
+    row = (await session.execute(stmt)).one()
+
+    # Bazasiz (Fake) testlarda `.one()` har bir ustunga 0 qaytaradi — haqiqiy
+    # sana bo'lmasa `None` deb hisoblaymiz (haqiqiy bazada `MAX()` xodim
+    # bo'lmaganda allaqachon `NULL` qaytaradi).
+    last_synced_at = row.last_synced_at if isinstance(row.last_synced_at, datetime) else None
+    minutes_since_sync = (
+        int(row.minutes_since_sync)
+        if last_synced_at is not None and row.minutes_since_sync is not None
+        else None
+    )
+
+    return AdSyncStatusOut(
+        last_synced_at=last_synced_at,
+        employee_count=row.employee_count or 0,
+        active_count=row.active_count or 0,
+        minutes_since_sync=minutes_since_sync,
+        is_stale=bool(row.is_stale),
+    )
 
 
 # ---------------------------------------------------------------------------

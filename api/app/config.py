@@ -39,5 +39,11 @@ class Settings(BaseSettings):
     default_quota_month: int = 200
     default_quota_quarter: int = 300
 
+    # AD sinxronizatsiya skripti soatiga bir marta ishga tushadi (`POST /api/ad-sync`).
+    # Agar `employees.synced_at` shu daqiqadan ko'p vaqt yangilanmagan bo'lsa,
+    # sinxronizatsiya to'xtagan deb ("eskirgan"/stale) belgilanadi. Standart —
+    # 180 daqiqa (3 soat = ketma-ket ikkita o'tkazib yuborilgan sinxronizatsiya).
+    ad_sync_stale_minutes: int = 180
+
 
 settings = Settings()

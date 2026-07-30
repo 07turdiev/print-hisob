@@ -216,3 +216,17 @@ export interface AgentsSummary {
   stale: number
   recentlyRestarted: number
 }
+
+// --- AD sync status ---------------------------------------------------------
+
+/** GET /api/ad-sync/status — health of the hourly Active Directory employee sync. */
+export interface AdSyncStatus {
+  /** ISO timestamp of the last successful sync; null when there are no employees yet. */
+  lastSyncedAt: string | null
+  employeeCount: number
+  activeCount: number
+  /** null when there are no employees yet. */
+  minutesSinceSync: number | null
+  /** True when the last sync is older than the server threshold, or there are zero employees. */
+  isStale: boolean
+}

@@ -79,3 +79,26 @@ def test_ad_sync_full_mode_with_empty_list_still_deactivates(client):
 def test_ad_sync_invalid_payload_rejected(client):
     r = client.post("/api/ad-sync", json={"mode": "weird", "employees": []})
     assert r.status_code == 422
+
+
+def test_ad_sync_status_builds_without_error(client):
+    r = client.get("/api/ad-sync/status")
+    assert r.status_code == 200
+    body = r.json()
+    assert body == {
+        "lastSyncedAt": None,
+        "employeeCount": 0,
+        "activeCount": 0,
+        "minutesSinceSync": None,
+        "isStale": False,
+    }
+
+
+def test_ad_sync_status_without_bearer_rejected():
+    from fastapi.testclient import TestClient
+
+    from app.main import app
+
+    with TestClient(app) as c:
+        r = c.get("/api/ad-sync/status")
+    assert r.status_code == 401

@@ -474,6 +474,42 @@ class EmployeeOut(BaseModel):
     synced_at: datetime = Field(serialization_alias="syncedAt")
 
 
+class AdSyncStatusOut(BaseModel):
+    """`GET /api/ad-sync/status` — dashboard uchun AD sinxronizatsiyasining
+    so'nggi holati (soatlik skript hali ishlab turibdimi)."""
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "examples": [
+                {
+                    "lastSyncedAt": "2026-07-13T05:52:35Z",
+                    "employeeCount": 157,
+                    "activeCount": 157,
+                    "minutesSinceSync": 14512,
+                    "isStale": True,
+                }
+            ]
+        }
+    )
+
+    last_synced_at: datetime | None = Field(
+        serialization_alias="lastSyncedAt",
+        description="`MAX(employees.synced_at)` — AD'dan oxirgi marta ma'lumot kelgan vaqt. Hali xodim yo'q bo'lsa `null`.",
+    )
+    employee_count: int = Field(serialization_alias="employeeCount", description="Jami xodimlar soni")
+    active_count: int = Field(
+        serialization_alias="activeCount", description="Faol (`is_active=true`) xodimlar soni"
+    )
+    minutes_since_sync: int | None = Field(
+        serialization_alias="minutesSinceSync",
+        description="So'nggi sinxronizatsiyadan beri o'tgan to'liq daqiqalar. Hech qachon sinxronlanmagan bo'lsa `null`.",
+    )
+    is_stale: bool = Field(
+        serialization_alias="isStale",
+        description="So'nggi sinxronizatsiya `AD_SYNC_STALE_MINUTES`dan eski (yoki umuman xodim yo'q) bo'lsa `true`.",
+    )
+
+
 # ---------------------------------------------------------------------------
 # Agent (.exe) sog'lik signali (heartbeat)
 # ---------------------------------------------------------------------------

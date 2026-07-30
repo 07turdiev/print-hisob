@@ -4,10 +4,11 @@ import { usePeriodStore } from '../stores/period'
 import DepartmentFilter from '../components/DepartmentFilter.vue'
 import EmployeeQuotaTable from '../components/EmployeeQuotaTable.vue'
 import CsvDownloadButton from '../components/CsvDownloadButton.vue'
+import AdSyncBanner from '../components/AdSyncBanner.vue'
 import AppIcon from '../components/AppIcon.vue'
 
 const periodStore = usePeriodStore()
-const { rows, search, activeFilter, departmentOptions, defaultQuota, loading, error, saveQuota } =
+const { rows, search, activeFilter, departmentOptions, defaultQuota, adSyncStatus, loading, error, saveQuota } =
   useEmployeesPage()
 
 function handleSave(login: string, allocatedPages: number) {
@@ -20,6 +21,8 @@ function handleSave(login: string, allocatedPages: number) {
 <template>
   <div class="page">
     <p v-if="error" class="error-banner">{{ error }}</p>
+
+    <AdSyncBanner :status="adSyncStatus" />
 
     <div class="filters card">
       <label class="search-box">

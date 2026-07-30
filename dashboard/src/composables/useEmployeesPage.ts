@@ -3,6 +3,7 @@ import { storeToRefs } from 'pinia'
 import { ApiError, getEmployeeStats, getEmployees, getQuotas, getSummary, putQuotas } from '../api/client'
 import type { Employee, EmployeeQuota, EmployeeStat, MergedEmployeeRow } from '../api/types'
 import { usePeriodStore } from '../stores/period'
+import { useAdSyncStatus } from './useAdSyncStatus'
 
 export type ActiveFilter = '' | 'active' | 'inactive'
 
@@ -28,6 +29,8 @@ export function useEmployeesPage() {
   const defaultQuota = ref(0)
   /** Unfiltered directory snapshot, used only to populate the department dropdown. */
   const directoryOptions = ref<Employee[]>([])
+  /** AD sync health, shown as a banner at the top of the page; independent of the selected period. */
+  const { status: adSyncStatus } = useAdSyncStatus()
 
   const loading = ref(false)
   const error = ref<string | null>(null)
@@ -158,6 +161,7 @@ export function useEmployeesPage() {
     activeFilter,
     departmentOptions,
     defaultQuota,
+    adSyncStatus,
     loading,
     error,
     saveQuota,
