@@ -29,12 +29,21 @@
 [CmdletBinding()]
 param(
     [switch]$Preview,
-    [string]$ConfigPath = (Join-Path $PSScriptRoot 'config.json')
+    [string]$ConfigPath
 )
 
 $ErrorActionPreference = 'Stop'
 
-$LogFile = Join-Path $PSScriptRoot 'ad-sync.log'
+# Skript joylashgan papkani ishonchli aniqlaymiz. DIQQAT: `$PSScriptRoot`ni
+# to'g'ridan-to'g'ri `param()` bloki standart qiymatida ISHLATMANG — vazifa
+# skriptni `powershell.exe -File ...` bilan ishga tushirganda u bo'sh bo'ladi
+# (`& 'yo'l'` yoki dot-source bilan esa to'ladi). Shu sabab bir necha zaxira usul.
+$ScriptDir = $PSScriptRoot
+if (-not $ScriptDir) { $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Definition }
+if (-not $ScriptDir) { $ScriptDir = (Get-Location).Path }
+
+if (-not $ConfigPath) { $ConfigPath = Join-Path $ScriptDir 'config.json' }
+$LogFile = Join-Path $ScriptDir 'ad-sync.log'
 
 function Write-Log {
     param([string]$Message, [string]$Level = 'INFO')
