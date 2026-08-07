@@ -123,11 +123,28 @@ export interface MergedEmployeeRow {
 // --- Printers --------------------------------------------------------------
 
 export interface PrinterStat {
+  /** Stable identity; `null` for legacy printers grouped by driver name (no MAC reported). */
+  mac: string | null
+  /** Resolved display name: admin custom name -> last driver name -> raw event name -> mac. */
   name: string
   pages: number
   jobs: number
   successRate: number
   failedJobs: number
+  lastIp: string | null
+}
+
+/** One row from GET/PUT /api/printers — the MAC-keyed printer registry. */
+export interface Printer {
+  mac: string
+  /** Admin-set friendly name; `null` when not set (falls back to driver name / mac for display). */
+  name: string | null
+  /** Ready-to-show name: `name` -> `lastDriverName` -> `mac`. */
+  displayName: string
+  lastIp: string | null
+  lastDriverName: string | null
+  lastSeen: string | null
+  firstSeen: string
 }
 
 // --- Departments ---------------------------------------------------------
@@ -160,6 +177,10 @@ export interface PrintJob {
   timestamp: string
   success: boolean
   reason: string | null
+  /** Stable printer identity; `null` when the agent didn't report a MAC. */
+  printerMac: string | null
+  /** Spooler job id, informational only; `null` when not reported. */
+  jobId: string | null
 }
 
 export interface PrintJobQuery {

@@ -94,8 +94,9 @@ function formatTimestamp(iso: string): string {
               <td>{{ job.computer }}</td>
               <td class="doc-cell">{{ job.document }}</td>
               <td>
-                <div>{{ job.printer }}</div>
+                <div :title="job.jobId ? `Ish ID: ${job.jobId}` : undefined">{{ job.printer }}</div>
                 <div class="muted">{{ job.printerIp }}</div>
+                <div v-if="job.printerMac" class="muted">{{ job.printerMac }}</div>
               </td>
               <td class="num">{{ job.pages }}</td>
               <td class="num">{{ job.documentPages }}</td>

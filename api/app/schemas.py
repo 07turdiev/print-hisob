@@ -34,12 +34,14 @@ class PrintJobIn(BaseModel):
                     "document": "Quarterly Report.docx",
                     "printer": "HP LaserJet M404",
                     "printerIp": "192.168.1.50",
+                    "printerMac": "52:54:00:12:34:56",
                     "pages": 2,
                     "documentPages": 3,
                     "duplex": True,
                     "timestamp": "2026-07-10T14:32:10.1234567+00:00",
                     "success": True,
                     "reason": "",
+                    "jobId": "7",
                 }
             ]
         },
@@ -67,6 +69,11 @@ class PrintJobIn(BaseModel):
     timestamp: datetime
     success: bool
     reason: _optional_text(4096) = None
+    # Printerning MAC manzili — faqat ma'lumot uchun. Bo'sh satr -> NULL.
+    printer_mac: _optional_text(64) = Field(default=None, alias="printerMac")
+    # Windows spooler job id ("7" kabi) — matn sifatida keladi va shunday saqlanadi.
+    # Bo'sh satr -> NULL.
+    job_id: _optional_text(64) = Field(default=None, alias="jobId")
 
     def normalized_timestamp(self) -> datetime:
         """Vaqt mintaqasi ko'rsatilmagan bo'lsa UTC deb hisoblaymiz."""
@@ -95,12 +102,14 @@ class PrintJobBatch(BaseModel):
                             "document": "Quarterly Report.docx",
                             "printer": "HP LaserJet M404",
                             "printerIp": "192.168.1.50",
+                            "printerMac": "52:54:00:12:34:56",
                             "pages": 2,
                             "documentPages": 3,
                             "duplex": True,
                             "timestamp": "2026-07-10T14:32:10.1234567+00:00",
                             "success": True,
                             "reason": "",
+                            "jobId": "7",
                         },
                         {
                             "user": "agoncalves",
@@ -162,6 +171,8 @@ class PrintJobOut(BaseModel):
     printed_at: datetime = Field(serialization_alias="timestamp")
     success: bool
     reason: str | None
+    printer_mac: str | None = Field(default=None, serialization_alias="printerMac")
+    job_id: str | None = Field(default=None, serialization_alias="jobId")
 
 
 # ---------------------------------------------------------------------------
@@ -397,21 +408,79 @@ class PrinterStatOut(BaseModel):
         json_schema_extra={
             "examples": [
                 {
+                    "mac": "52:54:00:12:34:56",
                     "name": "HP LaserJet M404",
                     "pages": 4210,
                     "jobs": 318,
                     "successRate": 0.98,
                     "failedJobs": 6,
+                    "lastIp": "192.168.1.50",
                 }
             ]
         }
     )
 
-    name: str
+    mac: str | None = Field(
+        default=None,
+        description="Printer MAC manzili — nom-bo'yicha guruh (mac yo'q printer) uchun `null`.",
+    )
+    name: str = Field(
+        description=(
+            "Reyestrdagi qulay nom (agar admin belgilagan bo'lsa), aks holda so'nggi "
+            "ko'rilgan drayver nomi, aks holda hodisadagi xom printer nomi, aks holda mac."
+        )
+    )
     pages: int
     jobs: int
     success_rate: float = Field(serialization_alias="successRate")
     failed_jobs: int = Field(serialization_alias="failedJobs")
+    last_ip: str | None = Field(default=None, serialization_alias="lastIp")
+
+
+# ---------------------------------------------------------------------------
+# Printerlar reyestri (MAC bo'yicha identifikatsiya + admin nomi)
+# ---------------------------------------------------------------------------
+
+
+class PrinterOut(BaseModel):
+    model_config = ConfigDict(
+        from_attributes=True,
+        json_schema_extra={
+            "examples": [
+                {
+                    "mac": "52:54:00:12:34:56",
+                    "name": "Buxgalteriya printeri",
+                    "displayName": "Buxgalteriya printeri",
+                    "lastIp": "192.168.1.50",
+                    "lastDriverName": "Canon MF743Cdw",
+                    "lastSeen": "2026-07-23T09:38:47+00:00",
+                    "firstSeen": "2026-06-01T08:00:00+00:00",
+                }
+            ]
+        },
+    )
+
+    mac: str
+    name: str | None = Field(description="Admin belgilagan qulay nom (bo'lmasa `null`)")
+    display_name: str = Field(
+        serialization_alias="displayName",
+        description="Ko'rsatish uchun tayyor nom: `name` -> `lastDriverName` -> mac",
+    )
+    last_ip: str | None = Field(serialization_alias="lastIp")
+    last_driver_name: str | None = Field(serialization_alias="lastDriverName")
+    last_seen: datetime | None = Field(serialization_alias="lastSeen")
+    first_seen: datetime = Field(serialization_alias="firstSeen")
+
+
+class PrinterNameIn(BaseModel):
+    """`PUT /api/printers/{mac}` tanasi."""
+
+    model_config = ConfigDict(
+        json_schema_extra={"examples": [{"name": "Buxgalteriya printeri"}]}
+    )
+
+    # Bo'sh satr ("") -> NULL (nomni tozalaydi).
+    name: _optional_text(255) = None
 
 
 class DepartmentRollupOut(BaseModel):

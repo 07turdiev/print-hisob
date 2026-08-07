@@ -36,6 +36,7 @@ const ICONS: Record<string, string> = {
     '<circle cx="12" cy="12" r="9"/><path d="M7.5 12.5l3 3 6-6.5"/>',
   layers:
     '<path d="M12 3 3 8l9 5 9-5-9-5z"/><path d="M3 12l9 5 9-5"/><path d="M3 16l9 5 9-5"/>',
+  edit: '<path d="M4 20h4l10.5-10.5a2.1 2.1 0 0 0-3-3L5 17v3z"/><path d="M13.5 7.5l3 3"/>',
 }
 
 const props = withDefaults(defineProps<{ name: string; size?: number }>(), { size: 18 })

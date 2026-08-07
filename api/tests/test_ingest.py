@@ -184,3 +184,68 @@ def test_empty_job_list_is_accepted(client):
 def test_invalid_jobs_rejected(client, job):
     r = client.post("/api/print-jobs", json={"computer": "X", "jobs": [job]})
     assert r.status_code == 422
+
+
+def test_printer_mac_and_job_id_are_stored(client):
+    """Yangi `printerMac`/`jobId` maydonlari `printer_mac`/`job_id` ustunlariga yoziladi."""
+    job = dict(PAYLOAD["jobs"][0]) | {"printerMac": "52:54:00:12:34:56", "jobId": "7"}
+    client.post("/api/print-jobs", json={"computer": "X", "jobs": [job]})
+    assert CAPTURED[-1]["printer_mac_m0"] == "52:54:00:12:34:56"
+    assert CAPTURED[-1]["job_id_m0"] == "7"
+
+
+def test_empty_printer_mac_and_job_id_become_null(client):
+    job = dict(PAYLOAD["jobs"][0]) | {"printerMac": "", "jobId": ""}
+    client.post("/api/print-jobs", json={"computer": "X", "jobs": [job]})
+    assert CAPTURED[-1]["printer_mac_m0"] is None
+    assert CAPTURED[-1]["job_id_m0"] is None
+
+
+def test_missing_printer_mac_and_job_id_default_to_null(client):
+    """Eski agentlar bu maydonlarni yubormaydi -> server `None` deb oladi."""
+    client.post("/api/print-jobs", json=PAYLOAD)
+    assert CAPTURED[-1]["printer_mac_m0"] is None
+    assert CAPTURED[-1]["job_id_m0"] is None
+    assert CAPTURED[-1]["printer_mac_m1"] is None
+    assert CAPTURED[-1]["job_id_m1"] is None
+
+
+def test_printer_registry_is_upserted_when_mac_present(client):
+    """`printerMac` bo'lgan hodisalar `printers` reyestrini upsert qiladi —
+    `name` yangilanuvchilar to'plamida bo'lmasligi kerak (admin nomiga tegilmaydi).
+    """
+    job = dict(PAYLOAD["jobs"][0]) | {"printerMac": "52:54:00:12:34:56"}
+    client.post("/api/print-jobs", json={"computer": "X", "jobs": [job]})
+
+    # Reyestr upserti print_jobs INSERT'idan OLDIN bajariladi (CAPTURED[0]).
+    printer_params = CAPTURED[0]
+    assert printer_params["mac_m0"] == "52:54:00:12:34:56"
+    assert printer_params["last_driver_name_m0"] == "HP LaserJet M404"
+    assert printer_params["last_ip_m0"] == "192.168.1.50"
+    assert "name_m0" not in printer_params
+
+    # Oxirgi bajarilgan so'rov hamon print_jobs INSERT'i (mavjud testlar shunga tayanadi).
+    assert "dedup_key_m0" in CAPTURED[-1]
+
+
+def test_printer_registry_not_touched_when_mac_absent(client):
+    """`printerMac` yubormagan (eski) agentlar reyestrga tegmaydi."""
+    client.post("/api/print-jobs", json=PAYLOAD)
+    assert len(CAPTURED) == 1
+    assert "dedup_key_m0" in CAPTURED[0]
+
+
+def test_dedup_key_unchanged_when_printer_mac_and_job_id_present(client):
+    """`dedup_key` faqat computer+user+document+printer+timestamp'ga bog'liq —
+    `printerMac`/`jobId` qo'shilishi bir xil asosiy maydonlar uchun bir xil
+    dedup_key hosil qilishi kerak (idempotentlik buzilmasligi uchun)."""
+    base_job = PAYLOAD["jobs"][0]
+    client.post("/api/print-jobs", json={"computer": "X", "jobs": [base_job]})
+    key_without = CAPTURED[-1]["dedup_key_m0"]
+
+    CAPTURED.clear()
+    job_with_new_fields = dict(base_job) | {"printerMac": "52:54:00:12:34:56", "jobId": "7"}
+    client.post("/api/print-jobs", json={"computer": "X", "jobs": [job_with_new_fields]})
+    key_with = CAPTURED[-1]["dedup_key_m0"]
+
+    assert key_without == key_with

@@ -16,6 +16,7 @@ import type {
   PeriodParams,
   PrintJobPage,
   PrintJobQuery,
+  Printer,
   PrinterStat,
   StatsSummary,
   TimeseriesPoint,
@@ -145,6 +146,20 @@ export function getFailures(params: PeriodParams): Promise<FailureReason[]> {
 
 export function getPrinterStats(params: PeriodParams): Promise<PrinterStat[]> {
   return request<PrinterStat[]>('/api/stats/printers', { query: periodQuery(params) })
+}
+
+// --- Printers registry (MAC-keyed) ---------------------------------------
+
+export function getPrinters(q?: string): Promise<Printer[]> {
+  return request<Printer[]>('/api/printers', { query: { q } })
+}
+
+/** Sets the friendly name for a printer. Empty string clears it (falls back to driver name). */
+export function renamePrinter(mac: string, name: string): Promise<Printer> {
+  return request<Printer>(`/api/printers/${encodeURIComponent(mac)}`, {
+    method: 'PUT',
+    body: { name },
+  })
 }
 
 export function getDepartmentStats(params: PeriodParams): Promise<DepartmentStat[]> {

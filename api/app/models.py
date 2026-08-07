@@ -40,6 +40,11 @@ class PrintJob(Base):
     printed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     success: Mapped[bool] = mapped_column(Boolean)
     reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Printerning MAC manzili — faqat ma'lumot uchun. Eski agentlar yubormaydi -> NULL.
+    printer_mac: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # Windows spooler job id (masalan "7") — matn sifatida saqlanadi, chunki
+    # raqam bo'lmagan shakllari ham bo'lishi mumkin. Eski agentlar yubormaydi -> NULL.
+    job_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
     # Bir xil chop etish hodisasi qayta yuborilganda dublikat yozilmasligi uchun.
     dedup_key: Mapped[str] = mapped_column(String(64), unique=True)
@@ -110,6 +115,34 @@ class EmployeeQuota(Base):
         Index("ix_employee_quotas_login", "login"),
         Index("ix_employee_quotas_period", "period_type", "year", "period_no"),
     )
+
+
+class Printer(Base):
+    """MAC manzili bo'yicha printerlar reyestri.
+
+    Bitta jismoniy printer turli kompyuterlarda turlicha drayver nomi bilan
+    ko'rinishi mumkin ("Canon Katta", "Canon svetnoy", ...) — MAC manzili
+    barqaror identifikator bo'lgani uchun shu jadval orqali "identifikatsiya"
+    qilinadi va admin bitta qulay nom belgilay oladi. Qator har bir chop etish
+    hodisasi kelganda (agar `printer_mac` bo'lsa) avtomatik upsert qilinadi —
+    lekin `name` (admin belgilagan) hech qachon avtomatik ustiga yozilmaydi.
+    """
+
+    __tablename__ = "printers"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+
+    mac: Mapped[str] = mapped_column(String(64), unique=True)
+    # Admin tomonidan qo'lda belgilangan qulay nom — avtomatik to'ldirilmaydi.
+    name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    last_ip: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # Eng so'nggi ko'rilgan xom drayver nomi (agent yuborgan `printer` maydoni) —
+    # `name` belgilanmagan bo'lsa ko'rsatish uchun zaxira (fallback).
+    last_driver_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    first_seen: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    last_seen: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class AgentStatus(Base):

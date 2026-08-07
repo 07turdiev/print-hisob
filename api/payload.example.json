@@ -6,24 +6,28 @@
       "document": "Quarterly Report.docx",
       "printer": "HP LaserJet M404",
       "printerIp": "192.168.1.50",
+      "printerMac": "52:54:00:12:34:56",
       "pages": 2,
       "documentPages": 3,
       "duplex": true,
       "timestamp": "2026-07-10T14:32:10.1234567+00:00",
       "success": true,
-      "reason": ""
+      "reason": "",
+      "jobId": "7"
     },
     {
       "user": "agoncalves",
       "document": "Invoice_9081.pdf",
       "printer": "Canon MF743Cdw",
       "printerIp": "",
+      "printerMac": "",
       "pages": 0,
       "documentPages": 0,
       "duplex": false,
       "timestamp": "2026-07-10T14:35:02.9876543+00:00",
       "success": false,
-      "reason": "Print job was canceled or deleted before completing"
+      "reason": "Print job was canceled or deleted before completing",
+      "jobId": "8"
     }
   ]
 }
