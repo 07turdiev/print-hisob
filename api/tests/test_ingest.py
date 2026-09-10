@@ -249,3 +249,52 @@ def test_dedup_key_unchanged_when_printer_mac_and_job_id_present(client):
     key_with = CAPTURED[-1]["dedup_key_m0"]
 
     assert key_without == key_with
+
+
+# ---------------------------------------------------------------------------
+# Paket hajmi chegarasi
+#
+# Agent uzoq uzilishdan keyin butun buferini (`MaxBufferedJobs`, standart 50 000)
+# bitta to'plamda yuboradi. Server chegarasi undan kichik bo'lsa: 422 -> agent
+# `2xx` olmaydi -> buferni tozalamaydi -> o'sha to'plamni abadiy qayta yuboradi
+# -> bufer to'lib, eng eski hodisalar butunlay yo'qoladi.
+# ---------------------------------------------------------------------------
+
+AGENT_MAX_BUFFERED_JOBS = 50_000
+
+
+def _job(i: int) -> dict:
+    return {
+        "user": "jsmith",
+        "document": f"Hisobot-{i}.docx",
+        "printer": "HP LaserJet M404",
+        "printerIp": "192.168.1.50",
+        "pages": 1,
+        "timestamp": "2026-07-10T14:32:10Z",
+        "success": True,
+        "reason": "",
+    }
+
+
+def test_batch_limit_exceeds_agent_buffer():
+    """Server chegarasi agent buferidan katta bo'lishi shart."""
+    from app.schemas import MAX_JOBS_PER_BATCH
+
+    assert MAX_JOBS_PER_BATCH > AGENT_MAX_BUFFERED_JOBS
+
+
+def test_accepts_batch_larger_than_5000(client):
+    """Avvalgi 5000 chegarasidan katta to'plam ham qabul qilinishi kerak."""
+    jobs = [_job(i) for i in range(6000)]
+    r = client.post("/api/print-jobs", json={"computer": "DESKTOP-ABC123", "jobs": jobs})
+    assert r.status_code == 201
+    assert r.json()["received"] == 6000
+
+
+def test_rejects_batch_above_hard_limit(client):
+    """Chegaradan oshgan to'plam rad etiladi — bu himoya saqlanib qolgan."""
+    from app.schemas import MAX_JOBS_PER_BATCH
+
+    jobs = [_job(i) for i in range(MAX_JOBS_PER_BATCH + 1)]
+    r = client.post("/api/print-jobs", json={"computer": "DESKTOP-ABC123", "jobs": jobs})
+    assert r.status_code == 422

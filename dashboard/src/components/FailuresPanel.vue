@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { FailureReason } from '../api/types'
+import AppIcon from './AppIcon.vue'
 
 const props = defineProps<{ failures: FailureReason[] }>()
 
@@ -9,21 +10,34 @@ const maxCount = computed(() => Math.max(1, ...props.failures.map((f) => f.count
 </script>
 
 <template>
-  <div class="card">
-    <h2>Xatoliklar sababi bo'yicha ({{ total }})</h2>
-    <ul class="failure-list">
-      <li v-for="f in failures" :key="f.reason">
-        <div class="reason-row">
-          <span class="reason-text">{{ f.reason }}</span>
-          <span class="reason-count">{{ f.count }}</span>
-        </div>
-        <div class="bar-track">
-          <div class="bar-fill" :style="{ width: `${(f.count / maxCount) * 100}%` }" />
-        </div>
-      </li>
-      <li v-if="!failures.length" class="empty">Bu davrda muvaffaqiyatsiz chop etish qayd etilmagan</li>
-    </ul>
-  </div>
+  <section class="panel">
+    <header class="panel__head">
+      <h2 class="panel__title">
+        <span class="panel__title-icon"><AppIcon name="warning" :size="16" /></span>
+        Xatoliklar sababi bo'yicha
+      </h2>
+      <span class="panel__count">Jami: {{ total }}</span>
+    </header>
+
+    <div class="panel__body">
+      <ul v-if="failures.length" class="failure-list">
+        <li v-for="f in failures" :key="f.reason" class="failure">
+          <div class="failure__row">
+            <span class="failure__text" :title="f.reason">{{ f.reason }}</span>
+            <span class="failure__count">{{ f.count }}</span>
+          </div>
+          <div class="bar-track">
+            <div class="bar-fill bar-fill--danger" :style="{ width: `${(f.count / maxCount) * 100}%` }" />
+          </div>
+        </li>
+      </ul>
+
+      <div v-else class="empty-state">
+        <span class="empty-state__icon"><AppIcon name="check-circle" :size="20" /></span>
+        Bu davrda muvaffaqiyatsiz chop etish qayd etilmagan
+      </div>
+    </div>
+  </section>
 </template>
 
 <style scoped>
@@ -33,37 +47,26 @@ const maxCount = computed(() => Math.max(1, ...props.failures.map((f) => f.count
   margin: 0;
   display: flex;
   flex-direction: column;
-  gap: 0.6rem;
+  gap: 10px;
 }
 
-.reason-row {
+.failure__row {
   display: flex;
   justify-content: space-between;
-  font-size: 0.88rem;
-  margin-bottom: 0.2rem;
+  gap: var(--space-3);
+  font-size: var(--font-size-base);
+  margin-bottom: 4px;
 }
 
-.reason-count {
-  font-weight: 700;
-  color: var(--color-danger-fg);
-}
-
-.bar-track {
-  height: 6px;
-  border-radius: var(--radius-pill);
-  background: var(--color-surface-2);
+.failure__text {
   overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.bar-fill {
-  height: 100%;
-  border-radius: var(--radius-pill);
-  background: var(--color-danger-fg);
-}
-
-.empty {
-  color: var(--color-text-muted);
-  text-align: center;
-  padding: 1rem 0;
+.failure__count {
+  font-weight: 600;
+  color: var(--color-danger-fg);
+  font-variant-numeric: tabular-nums;
 }
 </style>

@@ -5,45 +5,72 @@ import AppIcon from './AppIcon.vue'
 defineProps<{ collapsed: boolean; mobileOpen: boolean }>()
 const emit = defineEmits<{ 'toggle-collapsed': []; close: [] }>()
 
-const NAV_ITEMS = [
-  { to: '/', icon: 'home', label: 'Bosh sahifa' },
-  { to: '/choraklik', icon: 'quarterly', label: 'Choraklik' },
-  { to: '/oylik', icon: 'monthly', label: 'Oylik' },
-  { to: '/xodimlar', icon: 'employees', label: 'Xodimlar' },
-  { to: '/printerlar', icon: 'printers', label: 'Printerlar' },
-  { to: '/bolimlar', icon: 'departments', label: "Bo'limlar" },
-  { to: '/jurnal', icon: 'journal', label: "Jurnal" },
-  { to: '/agentlar', icon: 'agents', label: 'Agentlar' },
+/** Yon menyu bo'limlarga ajratilgan — davlat tizimlaridagi kabi guruhli ro'yxat. */
+const NAV_GROUPS = [
+  {
+    label: 'Asosiy',
+    items: [{ to: '/', icon: 'home', label: 'Bosh sahifa' }],
+  },
+  {
+    label: 'Hisobotlar',
+    items: [
+      { to: '/choraklik', icon: 'quarterly', label: 'Choraklik hisobot' },
+      { to: '/oylik', icon: 'monthly', label: 'Oylik hisobot' },
+    ],
+  },
+  {
+    label: "Ma'lumotnomalar",
+    items: [
+      { to: '/xodimlar', icon: 'employees', label: 'Xodimlar va kvotalar' },
+      { to: '/bolimlar', icon: 'departments', label: "Bo'limlar" },
+      { to: '/printerlar', icon: 'printers', label: 'Printerlar' },
+    ],
+  },
+  {
+    label: 'Nazorat',
+    items: [
+      { to: '/jurnal', icon: 'journal', label: 'Chop etishlar jurnali' },
+      { to: '/agentlar', icon: 'agents', label: 'Agentlar holati' },
+    ],
+  },
 ]
 </script>
 
 <template>
   <aside class="sidebar" :class="{ collapsed, 'mobile-open': mobileOpen }">
-    <div class="sidebar-header">
-      <div class="brand-mark">PH</div>
-      <span v-if="!collapsed" class="brand-title">Printer Hisob</span>
-    </div>
-
     <nav class="nav">
-      <RouterLink
-        v-for="item in NAV_ITEMS"
-        :key="item.to"
-        :to="item.to"
-        class="nav-item"
-        active-class="active"
-        :title="collapsed ? item.label : ''"
-        @click="emit('close')"
-      >
-        <AppIcon :name="item.icon" :size="19" />
-        <span v-if="!collapsed" class="nav-label">{{ item.label }}</span>
-      </RouterLink>
+      <div v-for="group in NAV_GROUPS" :key="group.label" class="nav-group">
+        <span v-if="!collapsed" class="nav-group-label">{{ group.label }}</span>
+        <span v-else class="nav-group-divider" />
+
+        <RouterLink
+          v-for="item in group.items"
+          :key="item.to"
+          :to="item.to"
+          class="nav-item"
+          active-class="active"
+          :title="collapsed ? item.label : ''"
+          @click="emit('close')"
+        >
+          <AppIcon :name="item.icon" :size="18" />
+          <span v-if="!collapsed" class="nav-label">{{ item.label }}</span>
+        </RouterLink>
+      </div>
     </nav>
 
-    <button type="button" class="collapse-btn" @click="emit('toggle-collapsed')">
-      <AppIcon :name="collapsed ? 'chevron-right' : 'chevron-left'" :size="16" />
-      <span v-if="!collapsed">Yig'ish</span>
-    </button>
+    <div class="sidebar-foot">
+      <button
+        type="button"
+        class="collapse-btn"
+        :title="collapsed ? 'Menyuni ochish' : 'Menyuni yig\'ish'"
+        @click="emit('toggle-collapsed')"
+      >
+        <AppIcon :name="collapsed ? 'chevron-right' : 'chevron-left'" :size="15" />
+        <span v-if="!collapsed">Menyuni yig'ish</span>
+      </button>
+    </div>
   </aside>
+
   <div v-if="mobileOpen" class="sidebar-backdrop" @click="emit('close')" />
 </template>
 
@@ -51,123 +78,119 @@ const NAV_ITEMS = [
 .sidebar {
   display: flex;
   flex-direction: column;
-  width: 15.5rem;
+  width: var(--sidebar-width);
   flex-shrink: 0;
-  background: var(--color-surface);
+  background: var(--color-sidebar-bg);
   border-right: 1px solid var(--color-border);
-  height: 100vh;
   position: sticky;
-  top: 0;
-  transition: width 0.18s ease;
+  top: var(--header-height);
+  height: calc(100vh - var(--header-height));
+  transition: width 0.16s ease;
   z-index: 20;
 }
 
 .sidebar.collapsed {
-  width: 4.25rem;
-}
-
-.sidebar-header {
-  display: flex;
-  align-items: center;
-  gap: 0.7rem;
-  padding: 1.1rem 1.1rem;
-  border-bottom: 1px solid var(--color-border);
-  min-height: 2.5rem;
-}
-
-.brand-mark {
-  width: 2.15rem;
-  height: 2.15rem;
-  flex-shrink: 0;
-  border-radius: var(--radius-sm);
-  background: var(--brand-gradient);
-  color: #ffffff;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-weight: 700;
-  font-size: 0.82rem;
-  box-shadow: 0 2px 8px rgba(99, 102, 241, 0.4);
-}
-
-.brand-title {
-  font-weight: 700;
-  font-size: 1rem;
-  white-space: nowrap;
-  color: var(--color-text);
+  width: var(--sidebar-width-collapsed);
 }
 
 .nav {
   display: flex;
   flex-direction: column;
-  gap: 0.2rem;
-  padding: 0.75rem;
+  padding: var(--space-2) 0;
   flex: 1;
   overflow-y: auto;
 }
 
+.nav-group {
+  display: flex;
+  flex-direction: column;
+  padding-bottom: var(--space-2);
+}
+
+.nav-group-label {
+  padding: 10px 14px 4px;
+  font-size: var(--font-size-xs);
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+  white-space: nowrap;
+}
+
+.nav-group-divider {
+  height: 1px;
+  margin: 6px 12px;
+  background: var(--color-border);
+}
+
+/* Menyu bandi: faol bo'lganda chap chekkada ko'k chiziq paydo bo'ladi */
 .nav-item {
   position: relative;
   display: flex;
   align-items: center;
-  gap: 0.75rem;
-  padding: 0.55rem 0.7rem;
-  border-radius: var(--radius-sm);
-  color: var(--color-text-muted);
+  gap: 10px;
+  padding: 8px 14px;
+  color: var(--color-text);
   text-decoration: none;
-  font-weight: 600;
-  font-size: 0.88rem;
+  font-size: var(--font-size-base);
+  font-weight: 500;
   white-space: nowrap;
+  border-left: 3px solid transparent;
   transition: background-color var(--transition), color var(--transition);
 }
 
-.sidebar.collapsed .nav-item {
-  justify-content: center;
-}
-
 .nav-item:hover {
-  background: var(--color-accent-soft-bg);
-  color: var(--color-text);
+  background: var(--color-sidebar-hover);
+  text-decoration: none;
 }
 
 .nav-item.active {
   background: var(--color-accent-soft-bg);
+  border-left-color: var(--color-accent);
   color: var(--color-accent-soft-fg);
+  font-weight: 600;
 }
 
-.nav-item.active::before {
-  content: '';
-  position: absolute;
-  left: -0.75rem;
-  top: 0.35rem;
-  bottom: 0.35rem;
-  width: 3px;
-  border-radius: var(--radius-pill);
-  background: var(--color-accent);
+.nav-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.sidebar.collapsed .nav-item.active::before {
-  left: 0;
+.sidebar.collapsed .nav-item {
+  justify-content: center;
+  padding: 9px 0;
+  border-left-width: 0;
+  border-right: 3px solid transparent;
+}
+
+.sidebar.collapsed .nav-item.active {
+  border-right-color: var(--color-accent);
+}
+
+.sidebar-foot {
+  border-top: 1px solid var(--color-border);
+  padding: var(--space-2);
 }
 
 .collapse-btn {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 0.5rem;
-  margin: 0.75rem;
-  padding: 0.5rem;
+  gap: 6px;
+  width: 100%;
+  height: 30px;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
   background: transparent;
   color: var(--color-text-muted);
-  font-size: 0.8rem;
+  font-size: var(--font-size-sm);
   font-weight: 600;
   transition: background-color var(--transition), color var(--transition);
 }
 
 .collapse-btn:hover {
   background: var(--color-accent-soft-bg);
+  border-color: var(--color-accent);
   color: var(--color-accent-soft-fg);
 }
 
@@ -175,29 +198,25 @@ const NAV_ITEMS = [
   display: none;
 }
 
-@media (max-width: 900px) {
+@media (max-width: 960px) {
   .sidebar {
     position: fixed;
     left: 0;
-    top: 0;
+    top: var(--header-height);
     transform: translateX(-100%);
     box-shadow: var(--shadow-lg);
+    width: var(--sidebar-width);
   }
 
   .sidebar.mobile-open {
     transform: translateX(0);
-    width: 15.5rem;
-  }
-
-  .sidebar.collapsed:not(.mobile-open) {
-    transform: translateX(-100%);
   }
 
   .sidebar-backdrop {
     display: block;
     position: fixed;
-    inset: 0;
-    background: rgba(0, 0, 0, 0.35);
+    inset: var(--header-height) 0 0 0;
+    background: rgba(10, 30, 55, 0.4);
     z-index: 19;
   }
 }

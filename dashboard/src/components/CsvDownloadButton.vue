@@ -24,11 +24,17 @@ function handleClick() {
 
 <template>
   <div class="csv-download">
-    <button type="button" class="btn btn-sm csv-btn" :disabled="downloading" @click="handleClick">
-      <AppIcon name="download" :size="15" />
-      {{ downloading ? 'Yuklanmoqda...' : 'CSV yuklab olish' }}
-    </button>
     <span v-if="downloadError" class="csv-error">{{ downloadError }}</span>
+    <button
+      type="button"
+      class="btn btn-sm"
+      :disabled="downloading"
+      title="KPI shaklidagi hisobotni Excel uchun yuklab olish"
+      @click="handleClick"
+    >
+      <AppIcon name="download" :size="14" />
+      {{ downloading ? 'Tayyorlanmoqda...' : 'CSV yuklab olish' }}
+    </button>
   </div>
 </template>
 
@@ -36,17 +42,11 @@ function handleClick() {
 .csv-download {
   display: flex;
   align-items: center;
-  gap: 0.6rem;
-}
-
-.csv-btn:hover:not(:disabled) {
-  border-color: var(--color-accent);
-  color: var(--color-accent);
-  background: var(--color-accent-soft-bg);
+  gap: var(--space-2);
 }
 
 .csv-error {
   color: var(--color-danger-fg);
-  font-size: 0.8rem;
+  font-size: var(--font-size-xs);
 }
 </style>

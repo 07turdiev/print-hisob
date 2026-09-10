@@ -6,6 +6,9 @@ import AppIcon from '../components/AppIcon.vue'
 
 const { printers, chartItems, loading, error, savingMac, renameErrors, rename } = usePrintersPage()
 
+const numberFormat = new Intl.NumberFormat('uz-UZ')
+const fmt = (n: number) => numberFormat.format(n)
+
 function successPercent(rate: number): string {
   return `${Math.round(rate * 1000) / 10}%`
 }
@@ -27,23 +30,39 @@ async function confirmEdit(mac: string) {
     await rename(mac, editValue.value.trim())
     editingMac.value = null
   } catch {
-    // Error is surfaced inline via renameErrors; keep the editor open so the user can retry.
+    // Xato renameErrors orqali ko'rsatiladi; tahrirlash oynasi ochiq qoladi.
   }
 }
 </script>
 
 <template>
   <div class="page">
-    <p v-if="error" class="error-banner">{{ error }}</p>
+    <p v-if="error" class="alert alert--danger">
+      <span class="alert__icon"><AppIcon name="warning" :size="16" /></span>
+      <span>{{ error }}</span>
+    </p>
 
-    <NamedBarChart title="Printerlar bo'yicha varaqlar" :items="chartItems" value-label="Varaqlar" />
+    <NamedBarChart
+      title="Printerlar bo'yicha qog'oz sarfi"
+      icon="printers"
+      :items="chartItems"
+      value-label="Varaq"
+    />
 
-    <div class="card">
-      <h2>Printerlar ro'yxati</h2>
+    <section class="panel">
+      <header class="panel__head">
+        <h2 class="panel__title">
+          <span class="panel__title-icon"><AppIcon name="printers" :size="16" /></span>
+          Printerlar ro'yxati
+        </h2>
+        <span class="panel__count">{{ printers.length }} ta qurilma</span>
+      </header>
+
       <div class="table-wrap">
         <table>
           <thead>
             <tr>
+              <th class="col-num">T/r</th>
               <th>Printer</th>
               <th class="num">Varaqlar</th>
               <th class="num">Ishlar</th>
@@ -52,169 +71,120 @@ async function confirmEdit(mac: string) {
             </tr>
           </thead>
           <tbody>
-            <tr v-for="p in printers" :key="p.mac ?? p.name">
+            <tr v-for="(p, i) in printers" :key="p.mac ?? p.name">
+              <td class="col-num">{{ i + 1 }}</td>
+
               <td>
+                <!-- MAC manzili bor printerga do'stona nom qo'yish mumkin -->
                 <template v-if="editingMac === p.mac && p.mac">
                   <div class="rename-editor">
                     <input
                       v-model="editValue"
                       type="text"
                       class="rename-input"
+                      placeholder="Masalan: 3-qavat, kotibiyat"
                       @keyup.enter="confirmEdit(p.mac)"
                       @keyup.escape="cancelEdit"
                     />
                     <button
                       type="button"
-                      class="btn btn-primary btn-sm quota-action"
+                      class="icon-btn icon-btn--ok"
+                      title="Saqlash"
                       :disabled="savingMac === p.mac"
                       @click="confirmEdit(p.mac)"
                     >
-                      Saqlash
+                      <AppIcon name="check" :size="15" />
                     </button>
-                    <button type="button" class="btn btn-ghost btn-sm quota-action" @click="cancelEdit">Bekor</button>
+                    <button type="button" class="icon-btn" title="Bekor qilish" @click="cancelEdit">
+                      <AppIcon name="close" :size="15" />
+                    </button>
                   </div>
                   <p v-if="renameErrors[p.mac]" class="rename-error">{{ renameErrors[p.mac] }}</p>
                 </template>
+
                 <template v-else>
                   <div class="printer-name">
-                    <span>{{ p.name }}</span>
+                    <span class="strong">{{ p.name }}</span>
                     <button
                       v-if="p.mac"
                       type="button"
-                      class="edit-btn"
+                      class="icon-btn icon-btn--tiny"
                       title="Nomni tahrirlash"
                       @click="startEdit(p.mac, p.name)"
                     >
-                      <AppIcon name="edit" :size="14" />
+                      <AppIcon name="edit" :size="13" />
                     </button>
-                    <span v-else class="no-mac-hint" title="MAC yo'q — nom qo'yib bo'lmaydi">MAC yo'q</span>
+                    <span v-else class="badge badge--muted badge--plain" title="MAC aniqlanmagan — nom qo'yib bo'lmaydi">
+                      MAC yo'q
+                    </span>
                   </div>
                 </template>
+
                 <div class="printer-sub">
                   <span v-if="p.mac">{{ p.mac }}</span>
-                  <span v-if="p.mac && p.lastIp"> &middot; </span>
+                  <span v-if="p.mac && p.lastIp"> · </span>
                   <span v-if="p.lastIp">{{ p.lastIp }}</span>
                 </div>
               </td>
-              <td class="num">{{ p.pages }}</td>
-              <td class="num">{{ p.jobs }}</td>
+
+              <td class="num strong">{{ fmt(p.pages) }}</td>
+              <td class="num">{{ fmt(p.jobs) }}</td>
               <td class="num" :class="{ negative: p.successRate < 0.9 }">{{ successPercent(p.successRate) }}</td>
-              <td class="num" :class="{ negative: p.failedJobs > 0 }">{{ p.failedJobs }}</td>
+              <td class="num" :class="{ negative: p.failedJobs > 0 }">{{ fmt(p.failedJobs) }}</td>
             </tr>
+
             <tr v-if="!printers.length">
-              <td colspan="5" class="empty">Ushbu davr uchun ma'lumot topilmadi</td>
+              <td colspan="6" class="empty">Ushbu davr uchun ma'lumot topilmadi</td>
             </tr>
           </tbody>
         </table>
       </div>
-    </div>
+    </section>
 
-    <p v-if="loading" class="loading-hint">Yuklanmoqda...</p>
+    <p v-if="loading" class="loading-pill">Yuklanmoqda...</p>
   </div>
 </template>
 
 <style scoped>
-.page {
-  display: flex;
-  flex-direction: column;
-  gap: 1.25rem;
-  max-width: 1280px;
-  margin: 0 auto;
-  padding: 1.5rem;
-}
-
-.error-banner {
-  background: var(--color-danger-bg);
-  color: var(--color-danger-fg);
-  padding: 0.6rem 1rem;
-  border-radius: var(--radius-sm);
-  margin: 0;
-}
-
-.negative {
-  color: var(--color-danger-fg);
-  font-weight: 700;
-}
-
-.empty {
-  text-align: center;
-  color: var(--color-text-muted);
-  padding: 1.5rem;
-}
-
 .printer-name {
   display: flex;
   align-items: center;
-  gap: 0.4rem;
-  font-weight: 600;
+  gap: 6px;
+  flex-wrap: wrap;
 }
 
 .printer-sub {
   color: var(--color-text-muted);
-  font-size: 0.78rem;
-  margin-top: 0.15rem;
+  font-size: var(--font-size-xs);
+  margin-top: 2px;
+  font-variant-numeric: tabular-nums;
 }
 
-.edit-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border: none;
-  background: transparent;
-  color: var(--color-text-muted);
-  cursor: pointer;
-  padding: 0.15rem;
-  border-radius: var(--radius-sm);
-  line-height: 0;
+.icon-btn--tiny {
+  width: 22px;
+  height: 22px;
 }
 
-.edit-btn:hover {
-  color: var(--color-accent-soft-fg);
-  background: var(--color-accent-soft-bg);
-}
-
-.no-mac-hint {
-  font-size: 0.7rem;
-  color: var(--color-text-muted);
-  font-weight: 500;
-  border: 1px dashed var(--color-border);
-  border-radius: var(--radius-pill);
-  padding: 0.05rem 0.5rem;
+.icon-btn--ok:hover {
+  color: var(--color-success-fg);
+  background: var(--color-success-bg);
 }
 
 .rename-editor {
   display: flex;
   align-items: center;
-  gap: 0.35rem;
+  gap: 3px;
   flex-wrap: wrap;
 }
 
 .rename-input {
-  height: 30px;
-  padding: 0 0.5rem;
-  min-width: 12rem;
-}
-
-.quota-action {
-  white-space: nowrap;
+  height: 26px;
+  min-width: 14rem;
 }
 
 .rename-error {
-  margin: 0.3rem 0 0;
+  margin-top: 4px;
   color: var(--color-danger-fg);
-  font-size: 0.78rem;
-}
-
-.loading-hint {
-  position: fixed;
-  bottom: 1rem;
-  right: 1rem;
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  box-shadow: var(--shadow-pop);
-  padding: 0.45rem 0.9rem;
-  border-radius: var(--radius-pill);
-  color: var(--color-text-muted);
-  font-size: 0.82rem;
+  font-size: var(--font-size-xs);
 }
 </style>

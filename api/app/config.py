@@ -37,7 +37,18 @@ class Settings(BaseSettings):
     # aks holda hamma "limitdan oshgan" bo'lib ko'rinadi. Ikkalasi mustaqil
     # qiymatlar — chorak oyning 3 baravari emas, mijoz ikkalasini alohida bergan.
     default_quota_month: int = 200
-    default_quota_quarter: int = 300
+    default_quota_quarter: int = 1000
+
+    # --- Agent bilan kvota almashinuvi (`POST /api/print-quotas`) ---
+    # Agent bir vaqtning o'zida faqat BITTA davr bo'yicha hisoblay oladi, shuning
+    # uchun dashboarddagi ikki davrdan (oylik/choraklik) qaysi biri agentga
+    # yuborilishini shu sozlama belgilaydi. Qiymatlar: "quarter" yoki "month".
+    agent_quota_period_type: str = "quarter"
+    # Javobda har bir foydalanuvchining haqiqiy (butun flot bo'yicha) sarfini
+    # yuboramizmi. `true` — agent o'z hisoblagichini bizning raqamimiz bilan
+    # almashtiradi (aniq, lekin allaqachon limitdan oshganlar darhol bloklanadi).
+    # `false` — agent o'z hisobini davom ettiradi (yumshoqroq boshlanish).
+    agent_quota_report_used: bool = True
 
     # AD sinxronizatsiya skripti soatiga bir marta ishga tushadi (`POST /api/ad-sync`).
     # Agar `employees.synced_at` shu daqiqadan ko'p vaqt yangilanmagan bo'lsa,

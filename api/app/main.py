@@ -8,16 +8,23 @@ from urllib.parse import quote
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Response, Security, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.security import APIKeyHeader
 from sqlalchemy import Integer, case, cast, exists, func, literal, or_, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth import create_access_token, require_user, verify_credentials
+from app.auth import (
+    API_KEY_UNAUTHORIZED_RESPONSE,
+    USER_UNAUTHORIZED_RESPONSE,
+    create_access_token,
+    require_api_key,
+    require_user,
+    verify_credentials,
+)
 from app.config import settings
 from app.db import Base, engine, get_session
 from app.models import AgentStatus, Employee, EmployeeQuota, PrintJob, Printer
 from app.periods import Period, PeriodType, default_quota_for, period_bounds, period_label
+from app.routers import print_quotas
 from app.schemas import (
     AdSyncStatusOut,
     AgentOut,
@@ -86,7 +93,13 @@ TAGS_METADATA = [
     {"name": "print-jobs", "description": "Chop etish hodisalarini yozish va o'qish."},
     {"name": "printers", "description": "Printerlar reyestri (MAC bo'yicha identifikatsiya va qulay nom)."},
     {"name": "employees", "description": "AD (Active Directory) xodimlar sinxronizatsiyasi."},
-    {"name": "quotas", "description": "Xodimlar uchun oylik/choraklik qog'oz kvotalari."},
+    {
+        "name": "quotas",
+        "description": (
+            "Xodimlar uchun oylik/choraklik qog'oz kvotalari va ish stantsiyasidagi "
+            "agent bilan limit almashinuvi (`/api/print-quotas`)."
+        ),
+    },
     {"name": "stats", "description": "Chorak/oy bo'yicha dashboard statistikasi."},
     {"name": "agents", "description": "Agent (.exe) sog'lik holati (heartbeat) monitoringi."},
     {"name": "service", "description": "Xizmat va baza holatini tekshirish."},
@@ -112,33 +125,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-api_key_header = APIKeyHeader(
-    name="X-API-Key",
-    auto_error=False,
-    description="Server `API_KEY` bilan ishga tushirilgandagina talab qilinadi.",
-)
+# Autentifikatsiya (`require_api_key`, `require_user`) va javob namunalari
+# `app.auth` da — dekoratorlardagi eski nom saqlanadi.
+UNAUTHORIZED_RESPONSE = API_KEY_UNAUTHORIZED_RESPONSE
 
-UNAUTHORIZED_RESPONSE = {
-    status.HTTP_401_UNAUTHORIZED: {"description": "Noto'g'ri yoki yo'q API kalit"}
-}
-
-USER_UNAUTHORIZED_RESPONSE = {
-    status.HTTP_401_UNAUTHORIZED: {"description": "Token yo'q, yaroqsiz yoki muddati tugagan"}
-}
-
-
-async def require_api_key(key: str | None = Security(api_key_header)) -> None:
-    """API_KEY .env'da o'rnatilgan bo'lsagina tekshiradi.
-
-    Bu **agentlar** (.exe) uchun — dashboard foydalanuvchilari uchun emas.
-    Dashboard endpointlari `require_user` (JWT bearer) bilan himoyalanadi.
-    """
-    if not settings.api_key:
-        return
-    if key != settings.api_key:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="Noto'g'ri yoki yo'q API kalit"
-        )
+# Alohida modullarga ko'chirilgan endpointlar.
+app.include_router(print_quotas.router)
 
 
 async def period_params(

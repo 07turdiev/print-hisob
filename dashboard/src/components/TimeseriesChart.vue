@@ -11,7 +11,8 @@ import {
   TooltipComponent,
 } from 'echarts/components'
 import type { TimeseriesPoint } from '../api/types'
-import { useChartTheme } from '../utils/chartTheme'
+import { useChartTheme, withAlpha } from '../utils/chartTheme'
+import AppIcon from './AppIcon.vue'
 
 use([
   CanvasRenderer,
@@ -23,52 +24,64 @@ use([
   DataZoomComponent,
 ])
 
-const props = defineProps<{ points: TimeseriesPoint[] }>()
+const props = withDefaults(defineProps<{ points: TimeseriesPoint[]; title?: string }>(), {
+  title: 'Kunlik dinamika',
+})
+
 const chartTheme = useChartTheme()
 
 const option = computed(() => {
   const t = chartTheme.value
   const lineColor = t.palette[0]
-  const barColor = t.palette[3]
+  const barColor = t.palette[1]
   return {
     color: [lineColor, barColor],
     textStyle: t.textStyle,
     tooltip: { trigger: 'axis', ...t.tooltip },
-    legend: { data: ['Varaqlar', 'Buyurtmalar'], top: 0, textStyle: { color: t.colors.textMuted } },
-    grid: { left: 48, right: 16, top: 40, bottom: 40 },
+    legend: {
+      data: ['Varaqlar', 'Buyurtmalar'],
+      top: 0,
+      right: 0,
+      itemWidth: 12,
+      itemHeight: 8,
+      textStyle: { color: t.colors.textMuted, fontSize: 11 },
+    },
+    grid: { left: 46, right: 20, top: 34, bottom: 42 },
     xAxis: {
       type: 'category',
       data: props.points.map((p) => p.date),
-      axisLabel: { hideOverlap: true, color: t.colors.textMuted },
+      axisLabel: { hideOverlap: true, color: t.colors.textMuted, fontSize: 11 },
       axisLine: t.axisLine,
       axisTick: { show: false },
     },
     yAxis: [
       {
         type: 'value',
-        name: 'Varaqlar',
-        axisLabel: { color: t.colors.textMuted },
+        name: 'Varaq',
+        nameTextStyle: { color: t.colors.textMuted, fontSize: 11 },
+        axisLabel: { color: t.colors.textMuted, fontSize: 11 },
         axisLine: { show: false },
         splitLine: t.splitLine,
       },
       {
         type: 'value',
-        name: 'Buyurtmalar',
+        name: 'Ish',
+        nameTextStyle: { color: t.colors.textMuted, fontSize: 11 },
         splitLine: { show: false },
-        axisLabel: { color: t.colors.textMuted },
+        axisLabel: { color: t.colors.textMuted, fontSize: 11 },
         axisLine: { show: false },
       },
     ],
-    dataZoom: [{ type: 'inside' }, { type: 'slider', height: 16, bottom: 4 }],
+    dataZoom: [{ type: 'inside' }, { type: 'slider', height: 14, bottom: 6 }],
     series: [
       {
         name: 'Varaqlar',
         type: 'line',
-        smooth: 0.3,
+        smooth: 0.25,
         showSymbol: false,
         symbol: 'circle',
         symbolSize: 6,
-        lineStyle: { width: 2.5, color: lineColor },
+        lineStyle: { width: 2, color: lineColor },
         itemStyle: { color: lineColor },
         areaStyle: {
           color: {
@@ -78,8 +91,8 @@ const option = computed(() => {
             x2: 0,
             y2: 1,
             colorStops: [
-              { offset: 0, color: 'rgba(99, 102, 241, 0.30)' },
-              { offset: 1, color: 'rgba(99, 102, 241, 0)' },
+              { offset: 0, color: withAlpha(lineColor, 0.26) },
+              { offset: 1, color: withAlpha(lineColor, 0) },
             ],
           },
         },
@@ -89,8 +102,8 @@ const option = computed(() => {
         name: 'Buyurtmalar',
         type: 'bar',
         yAxisIndex: 1,
-        barMaxWidth: 14,
-        itemStyle: { color: barColor, borderRadius: [4, 4, 0, 0] },
+        barMaxWidth: 12,
+        itemStyle: { color: withAlpha(barColor, 0.75), borderRadius: [2, 2, 0, 0] },
         data: props.points.map((p) => p.jobs),
       },
     ],
@@ -99,15 +112,27 @@ const option = computed(() => {
 </script>
 
 <template>
-  <div class="card">
-    <h2>Kunlik dinamika</h2>
-    <VChart class="chart" :option="option" autoresize />
-  </div>
+  <section class="panel">
+    <header class="panel__head">
+      <h2 class="panel__title">
+        <span class="panel__title-icon"><AppIcon name="chart" :size="16" /></span>
+        {{ title }}
+      </h2>
+    </header>
+
+    <div class="panel__body">
+      <VChart v-if="points.length" class="chart" :option="option" autoresize />
+      <div v-else class="empty-state">
+        <span class="empty-state__icon"><AppIcon name="chart" :size="20" /></span>
+        Tanlangan davr uchun kunlik ma'lumot yo'q
+      </div>
+    </div>
+  </section>
 </template>
 
 <style scoped>
 .chart {
-  height: 320px;
+  height: 300px;
   width: 100%;
 }
 </style>

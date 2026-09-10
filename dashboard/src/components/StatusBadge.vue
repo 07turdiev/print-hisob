@@ -4,53 +4,16 @@ import type { MatchStatus } from '../api/types'
 
 const props = defineProps<{ status: MatchStatus }>()
 
-const label = computed(() => {
-  switch (props.status) {
-    case 'active':
-      return 'Faol'
-    case 'inactive':
-      return 'Ketgan'
-    case 'unmatched':
-      return "Noma'lum"
-  }
-  return props.status
-})
+/** AD bilan solishtirish holati: faol xodim, ketgan xodim yoki AD'da topilmagan login. */
+const MAP: Record<string, { label: string; tone: string; title: string }> = {
+  active: { label: 'Faol', tone: 'success', title: "AD'da mavjud va faol xodim" },
+  inactive: { label: 'Ketgan', tone: 'muted', title: "AD'dan olib tashlangan xodim" },
+  unmatched: { label: "Noma'lum", tone: 'warning', title: "Bu login AD ro'yxatida topilmadi" },
+}
+
+const info = computed(() => MAP[props.status] ?? { label: props.status, tone: 'muted', title: '' })
 </script>
 
 <template>
-  <span class="badge" :class="`badge--${status}`">{{ label }}</span>
+  <span class="badge" :class="`badge--${info.tone}`" :title="info.title">{{ info.label }}</span>
 </template>
-
-<style scoped>
-.badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  padding: 0.2rem 0.6rem;
-  border-radius: var(--radius-pill);
-  font-size: 0.72rem;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-  white-space: nowrap;
-}
-.badge::before {
-  content: '';
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: currentColor;
-  flex-shrink: 0;
-}
-.badge--active {
-  background: var(--color-success-bg);
-  color: var(--color-success-fg);
-}
-.badge--inactive {
-  background: var(--color-muted-bg);
-  color: var(--color-muted-fg);
-}
-.badge--unmatched {
-  background: var(--color-warning-bg);
-  color: var(--color-warning-fg);
-}
-</style>

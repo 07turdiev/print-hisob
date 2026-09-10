@@ -105,6 +105,16 @@ class FakeSession:
     def begin(self) -> _FakeTx:
         return _FakeTx()
 
+    async def commit(self) -> None:
+        """Haqiqiy sessiyada tranzaksiyani yopadi; bazasiz muhitda hech nima qilmaydi.
+
+        Faqat `session.begin()` blokidan tashqarida yozadigan xizmatlar uchun kerak
+        (masalan `app.services.quota_sync` — u avval SELECT bajarib, so'ng yozadi).
+        """
+
+    async def rollback(self) -> None:
+        """Xato yuz berganda chaqiriladi; bazasiz muhitda hech nima qilmaydi."""
+
     async def execute(self, stmt) -> _FakeResult:
         params = stmt.compile(dialect=postgresql.dialect()).params
         CAPTURED.append(params)

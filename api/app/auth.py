@@ -14,7 +14,7 @@ from datetime import datetime, timedelta, timezone
 
 import jwt
 from fastapi import HTTPException, Security, status
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from fastapi.security import APIKeyHeader, HTTPAuthorizationCredentials, HTTPBearer
 
 from app.config import settings
 
@@ -24,6 +24,41 @@ bearer_scheme = HTTPBearer(
     auto_error=False,
     description="`/api/auth/login`dan olingan JWT token (`Authorization: Bearer <token>`).",
 )
+
+# ---------------------------------------------------------------------------
+# Mashina agentlari uchun (.exe, AD skripti) — X-API-Key
+# ---------------------------------------------------------------------------
+
+api_key_header = APIKeyHeader(
+    name="X-API-Key",
+    auto_error=False,
+    description="Server `API_KEY` bilan ishga tushirilgandagina talab qilinadi.",
+)
+
+# HTTP sarlavhalari registrga sezgir emas, shuning uchun agent yuboradigan
+# `X-Api-Key` ham shu tekshiruvdan o'tadi (sinovdan o'tkazilgan).
+
+API_KEY_UNAUTHORIZED_RESPONSE = {
+    status.HTTP_401_UNAUTHORIZED: {"description": "Noto'g'ri yoki yo'q API kalit"}
+}
+
+USER_UNAUTHORIZED_RESPONSE = {
+    status.HTTP_401_UNAUTHORIZED: {"description": "Token yo'q, yaroqsiz yoki muddati tugagan"}
+}
+
+
+async def require_api_key(key: str | None = Security(api_key_header)) -> None:
+    """`API_KEY` .env'da o'rnatilgan bo'lsagina tekshiradi.
+
+    Bu **agentlar** (.exe, AD sinxronizatsiya skripti) uchun — dashboard
+    foydalanuvchilari uchun emas; ular `require_user` (JWT bearer) bilan o'tadi.
+    """
+    if not settings.api_key:
+        return
+    if key != settings.api_key:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Noto'g'ri yoki yo'q API kalit"
+        )
 
 
 def verify_credentials(username: str, password: str) -> bool:

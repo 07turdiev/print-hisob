@@ -3,6 +3,7 @@ import { ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ApiError } from '../api/client'
 import { useAuthStore } from '../stores/auth'
+import AppIcon from '../components/AppIcon.vue'
 
 const auth = useAuthStore()
 const router = useRouter()
@@ -12,6 +13,13 @@ const username = ref('')
 const password = ref('')
 const loading = ref(false)
 const error = ref<string | null>(null)
+
+const FEATURES = [
+  { icon: 'pages', text: "Xodimlar kesimida qog'oz sarfi va kvota nazorati" },
+  { icon: 'quarterly', text: 'Choraklik va oylik hisobotlar, KPI shaklida eksport' },
+  { icon: 'printers', text: "Printerlar va bo'limlar bo'yicha jamlanma tahlil" },
+  { icon: 'shield', text: 'Active Directory bilan avtomatik sinxronizatsiya' },
+]
 
 async function submit() {
   if (!username.value || !password.value) return
@@ -35,29 +43,55 @@ async function submit() {
 
 <template>
   <div class="login-page">
-    <form class="login-card card" @submit.prevent="submit">
-      <div class="brand">
-        <div class="brand-mark">PH</div>
-        <h1>Printer Hisob</h1>
-      </div>
-      <p class="subtitle">Davom etish uchun tizimga kiring</p>
+    <div class="login-layout">
+      <!-- Chap taraf: tizim haqida qisqacha (tor ekranda yashiriladi) -->
+      <aside class="intro">
+        <div class="intro__brand">
+          <span class="intro__mark"><AppIcon name="printers" :size="24" /></span>
+          <div>
+            <div class="intro__name">PRINTER HISOB</div>
+            <div class="intro__sub">Qog'oz sarfini nazorat qilish tizimi</div>
+          </div>
+        </div>
 
-      <label class="field">
-        <span>Foydalanuvchi</span>
-        <input v-model="username" type="text" autocomplete="username" required autofocus />
-      </label>
+        <ul class="intro__list">
+          <li v-for="f in FEATURES" :key="f.text">
+            <AppIcon :name="f.icon" :size="16" />
+            <span>{{ f.text }}</span>
+          </li>
+        </ul>
 
-      <label class="field">
-        <span>Parol</span>
-        <input v-model="password" type="password" autocomplete="current-password" required />
-      </label>
+        <p class="intro__foot">"MADANIY HAYOT MEDIA MARKETING MARKAZI" MCHJ ©</p>
+      </aside>
 
-      <p v-if="error" class="error-banner">{{ error }}</p>
+      <!-- O'ng taraf: kirish shakli -->
+      <form class="login-card" @submit.prevent="submit">
+        <div class="login-card__head">
+          <h1>Tizimga kirish</h1>
+          <p>Tizimga faqat vakolatli xodimlar kirishi mumkin</p>
+        </div>
 
-      <button type="submit" class="btn btn-primary submit-btn" :disabled="loading">
-        {{ loading ? 'Tekshirilmoqda...' : 'Kirish' }}
-      </button>
-    </form>
+        <label class="login-field">
+          <span>Foydalanuvchi nomi</span>
+          <input v-model="username" type="text" autocomplete="username" required autofocus />
+        </label>
+
+        <label class="login-field">
+          <span>Parol</span>
+          <input v-model="password" type="password" autocomplete="current-password" required />
+        </label>
+
+        <p v-if="error" class="alert alert--danger">
+          <span class="alert__icon"><AppIcon name="warning" :size="16" /></span>
+          <span>{{ error }}</span>
+        </p>
+
+        <button type="submit" class="btn btn-primary submit-btn" :disabled="loading">
+          <AppIcon v-if="!loading" name="logout" :size="15" />
+          {{ loading ? 'Tekshirilmoqda...' : 'Kirish' }}
+        </button>
+      </form>
+    </div>
   </div>
 </template>
 
@@ -67,84 +101,157 @@ async function submit() {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 1.5rem;
-  position: relative;
-  overflow: hidden;
+  padding: var(--space-4);
   background:
-    radial-gradient(60% 55% at 15% 10%, rgba(99, 102, 241, 0.22), transparent 60%),
-    radial-gradient(55% 50% at 88% 88%, rgba(139, 92, 246, 0.2), transparent 60%),
+    radial-gradient(70% 60% at 12% 0%, rgba(15, 91, 168, 0.16), transparent 62%),
+    radial-gradient(60% 55% at 92% 100%, rgba(15, 91, 168, 0.12), transparent 60%),
     var(--color-bg);
 }
 
-.login-card {
-  position: relative;
+.login-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
   width: 100%;
-  max-width: 380px;
+  max-width: 860px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+  background: var(--color-surface);
+}
+
+/* Chap ko'k panel */
+.intro {
   display: flex;
   flex-direction: column;
-  gap: 1.15rem;
-  padding: 2.25rem 2rem;
-  box-shadow: var(--shadow-lg);
+  gap: var(--space-5);
+  padding: var(--space-6) var(--space-5);
+  background: var(--color-header-bg);
+  color: var(--color-header-fg);
 }
 
-.brand {
+.intro__brand {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
+  gap: 12px;
 }
 
-.brand-mark {
-  width: 2.75rem;
-  height: 2.75rem;
-  border-radius: var(--radius);
-  background: var(--brand-gradient);
-  color: #ffffff;
-  display: flex;
+.intro__mark {
+  display: inline-flex;
   align-items: center;
   justify-content: center;
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, 0.14);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: #ffffff;
+}
+
+.intro__name {
+  font-size: 1.1rem;
   font-weight: 700;
-  font-size: 1rem;
-  box-shadow: 0 4px 14px rgba(99, 102, 241, 0.4);
+  letter-spacing: 0.07em;
+  color: #ffffff;
 }
 
-.brand h1 {
-  font-size: 1.2rem;
+.intro__sub {
+  font-size: var(--font-size-sm);
+  color: var(--color-header-fg-muted);
+}
+
+.intro__list {
+  list-style: none;
   margin: 0;
-  letter-spacing: -0.01em;
-}
-
-.subtitle {
-  margin: -0.6rem 0 0;
-  color: var(--color-text-muted);
-  font-size: 0.88rem;
-}
-
-.field {
+  padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 0.35rem;
-  font-size: 0.85rem;
+  gap: 12px;
+}
+
+.intro__list li {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: var(--font-size-base);
+  line-height: 1.45;
+  color: #e2edf8;
+}
+
+.intro__list svg {
+  flex-shrink: 0;
+  margin-top: 1px;
+  color: #9dc6ea;
+}
+
+.intro__foot {
+  margin-top: auto;
+  padding-top: var(--space-3);
+  border-top: 1px solid rgba(255, 255, 255, 0.15);
+  font-size: var(--font-size-xs);
+  color: var(--color-header-fg-muted);
+}
+
+/* O'ng shakl */
+.login-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-6) var(--space-5);
+  background: var(--color-surface);
+}
+
+.login-card__head h1 {
+  font-size: 1.2rem;
   font-weight: 600;
+}
+
+.login-card__head p {
+  margin-top: 4px;
+  font-size: var(--font-size-sm);
   color: var(--color-text-muted);
 }
 
-.field input {
-  font-weight: 400;
-  font-size: 0.95rem;
+.login-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.login-field > span {
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-muted);
+}
+
+.login-field input {
+  height: 38px;
+  font-size: var(--font-size-md);
 }
 
 .submit-btn {
-  width: 100%;
-  font-size: 0.95rem;
-  margin-top: 0.25rem;
+  height: 38px;
+  margin-top: var(--space-2);
+  font-size: var(--font-size-md);
 }
 
-.error-banner {
-  margin: 0;
-  background: var(--color-danger-bg);
-  color: var(--color-danger-fg);
-  padding: 0.55rem 0.8rem;
-  border-radius: var(--radius-sm);
-  font-size: 0.85rem;
+@media (max-width: 760px) {
+  .login-layout {
+    grid-template-columns: 1fr;
+    max-width: 420px;
+  }
+
+  .intro {
+    padding: var(--space-4);
+    gap: var(--space-3);
+  }
+
+  .intro__list,
+  .intro__foot {
+    display: none;
+  }
 }
 </style>

@@ -76,6 +76,36 @@ class Period:
     end: datetime
 
 
+def current_period(period_type: PeriodType, now: datetime | None = None) -> Period:
+    """Hozirgi paytga to'g'ri keladigan davrni (chegaralari bilan) qaytaradi.
+
+    Agent bilan kvota almashinuvida ishlatiladi: server "joriy davr qaysi" degan
+    savolga o'zi javob beradi, agent esa uni `periodKey` orqali qabul qiladi.
+    """
+    moment = now or datetime.now(timezone.utc)
+    if period_type == "month":
+        period_no = moment.month
+    else:
+        period_no = (moment.month - 1) // 3 + 1
+    start, end = period_bounds(period_type, moment.year, period_no)
+    return Period(
+        period_type=period_type, year=moment.year, period_no=period_no, start=start, end=end
+    )
+
+
+def period_key(period_type: PeriodType, year: int, period_no: int) -> str:
+    """Agentga yuboriladigan davr identifikatori: `2026-Q3` yoki `2026-09`.
+
+    **Muhim**: agent hujjatiga ko'ra bu qiymatning o'zgarishi — agentdagi
+    hisoblagichlarni nolga tushiradigan yagona narsa. Shuning uchun format
+    barqaror bo'lishi shart: bir xil davr uchun har doim bir xil satr.
+    """
+    validate_period_no(period_type, period_no)
+    if period_type == "month":
+        return f"{year}-{period_no:02d}"
+    return f"{year}-Q{period_no}"
+
+
 # Hisobotlarda (masalan CSV eksport) ko'rsatiladigan oy nomlari (o'zbekcha, lotin).
 _UZ_MONTH_NAMES = [
     "Yanvar",

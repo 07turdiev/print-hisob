@@ -1,85 +1,54 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { StatsSummary } from '../api/types'
-import AppIcon from './AppIcon.vue'
+import StatTile from './StatTile.vue'
 
 const props = defineProps<{ summary: StatsSummary | null }>()
-
-const successPercent = computed(() => {
-  if (!props.summary) return '-'
-  return `${Math.round(props.summary.successRate * 1000) / 10}%`
-})
 
 const numberFormat = new Intl.NumberFormat('uz-UZ')
 
 function fmt(value: number | undefined): string {
-  return value === undefined ? '-' : numberFormat.format(value)
+  return value === undefined ? '—' : numberFormat.format(value)
 }
 
-const tiles = computed(() => [
-  { label: 'Jami varaqlar', value: fmt(props.summary?.totalPages), icon: 'document' },
-  { label: 'Jami buyurtmalar', value: fmt(props.summary?.totalJobs), icon: 'layers' },
-  { label: 'Muvaffaqiyat darajasi', value: successPercent.value, icon: 'check-circle' },
-  { label: 'Faol printerlar', value: fmt(props.summary?.activePrinters), icon: 'printers' },
-])
+const successRate = computed(() => props.summary?.successRate ?? null)
+
+const successPercent = computed(() =>
+  successRate.value === null ? '—' : `${Math.round(successRate.value * 1000) / 10}%`,
+)
+
+/** Muvaffaqiyat darajasi past bo'lsa kartochka rangi ogohlantiruvchiga o'zgaradi. */
+const successTone = computed(() => {
+  if (successRate.value === null) return 'muted' as const
+  if (successRate.value >= 0.98) return 'success' as const
+  if (successRate.value >= 0.9) return 'accent' as const
+  return 'danger' as const
+})
+
+const failedHint = computed(() => {
+  const s = props.summary
+  if (!s) return undefined
+  const failed = Math.max(0, s.totalJobs - Math.round(s.totalJobs * s.successRate))
+  return failed > 0 ? `${numberFormat.format(failed)} ta xatolik` : 'Xatoliksiz'
+})
 </script>
 
 <template>
-  <div class="kpi-grid">
-    <div v-for="tile in tiles" :key="tile.label" class="card kpi">
-      <span class="kpi-icon">
-        <AppIcon :name="tile.icon" :size="18" />
-      </span>
-      <div class="kpi-body">
-        <span class="kpi-label">{{ tile.label }}</span>
-        <span class="kpi-value">{{ tile.value }}</span>
-      </div>
-    </div>
+  <div class="grid-3">
+    <StatTile label="Jami varaqlar" :value="fmt(summary?.totalPages)" icon="pages" hint="Sarflangan qog'oz" />
+    <StatTile
+      label="Jami buyurtmalar"
+      :value="fmt(summary?.totalJobs)"
+      icon="layers"
+      hint="Chop etish hodisalari"
+    />
+    <StatTile
+      label="Muvaffaqiyat darajasi"
+      :value="successPercent"
+      icon="check-circle"
+      :tone="successTone"
+      :hint="failedHint"
+    />
+    <StatTile label="Faol printerlar" :value="fmt(summary?.activePrinters)" icon="printers" hint="Davr ichida ishlagan" />
   </div>
 </template>
-
-<style scoped>
-.kpi-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 1rem;
-}
-
-.kpi {
-  display: flex;
-  align-items: center;
-  gap: 0.9rem;
-}
-
-.kpi-icon {
-  flex-shrink: 0;
-  width: 2.6rem;
-  height: 2.6rem;
-  border-radius: var(--radius-sm);
-  background: var(--color-accent-soft-bg);
-  color: var(--color-accent-soft-fg);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.kpi-body {
-  display: flex;
-  flex-direction: column;
-  gap: 0.3rem;
-  min-width: 0;
-}
-
-.kpi-label {
-  font-size: 0.78rem;
-  color: var(--color-text-muted);
-  font-weight: 600;
-}
-
-.kpi-value {
-  font-size: 1.65rem;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-  line-height: 1.1;
-}
-</style>

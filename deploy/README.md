@@ -91,6 +91,46 @@ cd api && .venv/bin/pip install -r requirements.txt && sudo systemctl restart pr
 cd ../dashboard && npm ci && npm run build      # nginx statikni darrov oladi
 ```
 
+## Kvota endpointini yoqish (`/api/print-quotas`)
+
+Agent (`PrintMonitor.exe`) har necha daqiqada `POST /api/print-quotas` ga murojaat
+qiladi. Endpoint bo'lmasa `404` oladi va **mahalliy** (`appsettings.json` dagi)
+limitni qo'llaydi — dashboarddagi kvota o'zgarishi unga yetib bormaydi.
+
+Shu endpoint qo'shilgan versiyani chiqarayotganda:
+
+**1. Prod `.env` ni yangilang.** Sozlama fayli namunadan nusxa olingani uchun eski
+qiymat yozilgan bo'lishi mumkin — kod standartining o'zgarishi unga ta'sir qilmaydi:
+
+```bash
+cd /home/user/print-hisob/api
+nano .env
+```
+```ini
+DEFAULT_QUOTA_QUARTER=1000        # eski qiymat 300 edi
+AGENT_QUOTA_PERIOD_TYPE=quarter   # agentga choraklik davr yuboriladi
+AGENT_QUOTA_REPORT_USED=true      # haqiqiy sarf yuboriladi
+```
+
+**2. Jadval avtomatik yaratiladi.** `AUTO_CREATE_TABLES=true` bo'lgani uchun
+`agent_quota_state` xizmat ishga tushganda o'zi paydo bo'ladi — qo'lda `ALTER`
+kerak emas.
+
+**3. Tekshiring:**
+```bash
+sudo systemctl restart printer-hisob-api
+curl -s -X POST http://127.0.0.1:8000/api/print-quotas \
+  -H "Content-Type: application/json" -H "X-API-Key: <API_KEY>" \
+  -d '{"computer":"TEST","timestamp":"2026-01-01T00:00:00Z","users":[]}'
+# -> {"periodKey":"2026-Q1","defaultLimit":1000,"users":[]}
+```
+
+> **Diqqat:** javobdagi `periodKey` agentga birinchi marta yetib borganda
+> undagi hisoblagichlar **nolga tushadi** — limitdan oshib bloklangan xodimlar
+> shu zahoti ochiladi. Keyin esa server bergan haqiqiy sarf (`used`) qo'llanadi,
+> ya'ni chorakda 1000 varaqdan oshganlar yana bloklanadi. Kimlar ekanini
+> oldindan ko'rish uchun: `scripts/Check-Prod.ps1`.
+
 ## Xatoliklarni tekshirish
 - Backend: `journalctl -u printer-hisob-api -e`
 - Nginx: `sudo tail -f /var/log/nginx/error.log`

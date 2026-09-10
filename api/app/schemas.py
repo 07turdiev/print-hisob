@@ -22,6 +22,13 @@ def _optional_text(max_length: int):
     return Annotated[_text(max_length) | None, BeforeValidator(_empty_to_none)]
 
 
+# Bitta `POST /api/print-jobs` paketidagi hodisalarning eng ko'p soni.
+# Agentning mahalliy buferi (`MaxBufferedJobs`) standart holatda 50 000 —
+# uzilishdan keyin u butun buferni bitta to'plamda yuboradi, shuning uchun
+# server chegarasi undan sezilarli katta bo'lishi kerak.
+MAX_JOBS_PER_BATCH = 60_000
+
+
 class PrintJobIn(BaseModel):
     """Bitta chop etish hodisasi (agent yuboradigan camelCase kalitlar)."""
 
@@ -129,10 +136,18 @@ class PrintJobBatch(BaseModel):
     )
 
     computer: _text(255) = Field(description="Hodisalarni yuborgan ish stantsiyasi nomi")
+    # Chegara agentning buferidan (`MaxBufferedJobs`, standart 50 000) KATTA bo'lishi
+    # shart. Aks holda uzoq uzilishdan keyin agent butun buferni bitta to'plamda
+    # yuboradi, server 422 qaytaradi, agent esa `2xx` olmagani uchun buferni
+    # tozalamaydi va xuddi shu to'plamni abadiy qayta yuboraveradi — natijada
+    # bufer to'lib, eng eski hodisalar butunlay yo'qoladi.
     jobs: list[PrintJobIn] = Field(
         default_factory=list,
-        max_length=5000,
-        description="Chop etish hodisalari (eng ko'pi 5000 ta)",
+        max_length=MAX_JOBS_PER_BATCH,
+        description=(
+            f"Chop etish hodisalari (eng ko'pi {MAX_JOBS_PER_BATCH} ta — "
+            "agent buferi 50 000, undan katta chegara qo'yilgan)"
+        ),
     )
 
 
@@ -757,3 +772,106 @@ class LoginOut(BaseModel):
     expires_in: int = Field(
         serialization_alias="expiresIn", description="Token amal qilish muddati (soniyalarda)"
     )
+
+
+# ---------------------------------------------------------------------------
+# Agent bilan kvota almashinuvi (POST /api/print-quotas)
+# ---------------------------------------------------------------------------
+
+
+class QuotaSyncUserIn(BaseModel):
+    """Agent hisoblagan bitta foydalanuvchi (so'rov tanasidagi `users[]` elementi)."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    user: _text(255) = Field(description="Foydalanuvchi nomi (domen prefiksi bo'lishi mumkin)")
+    pages_used_here: int = Field(
+        default=0,
+        ge=0,
+        alias="pagesUsedHere",
+        description="Shu mashinada joriy davrda hisoblangan varaqlar",
+    )
+    pages_used: int = Field(
+        default=0,
+        ge=0,
+        alias="pagesUsed",
+        description="Agent fikricha butun flot bo'yicha joriy summa",
+    )
+    # Agent "cheklovsiz"ni `null` bilan bildiradi, shuning uchun `ge=0` yo'q:
+    # `-1` ham yaroqli qiymat (aniq cheklovsiz).
+    limit: int | None = Field(
+        default=None, description="Agent ayni damda qo'llayotgan limit (null — cheklovsiz)"
+    )
+
+
+class QuotaSyncIn(BaseModel):
+    """`POST /api/print-quotas` tanasi — agent sarfni bildiradi va limitlarni so'raydi."""
+
+    model_config = ConfigDict(
+        populate_by_name=True,
+        json_schema_extra={
+            "examples": [
+                {
+                    "computer": "LAPTOP-JANE",
+                    "periodKey": "2026-Q3",
+                    "timestamp": "2026-09-08T09:15:00Z",
+                    "users": [
+                        {"user": "jane", "pagesUsedHere": 42, "pagesUsed": 137, "limit": 1000}
+                    ],
+                }
+            ]
+        },
+    )
+
+    computer: _text(255)
+    # Agent oxirgi javobdan olgan davr identifikatorini qaytaradi. Birinchi
+    # so'rovda (yoki agent hali serverdan davr olmagan bo'lsa) bo'sh keladi.
+    period_key: _optional_text(64) = Field(default=None, alias="periodKey")
+    timestamp: datetime
+    users: list[QuotaSyncUserIn] = Field(
+        default_factory=list, max_length=1000, description="Shu mashinadagi foydalanuvchilar"
+    )
+
+    def normalized_timestamp(self) -> datetime:
+        """Vaqt mintaqasi ko'rsatilmagan bo'lsa UTC deb hisoblaymiz."""
+        if self.timestamp.tzinfo is None:
+            return self.timestamp.replace(tzinfo=timezone.utc)
+        return self.timestamp
+
+
+class QuotaLimitOut(BaseModel):
+    """Javobdagi bitta foydalanuvchi limiti.
+
+    `limit=None` — "menda fikr yo'q", agent `defaultLimit`ga tushadi (bu `-1`
+    bilan bir xil emas: `-1` — aniq cheklovsiz, `0` — umuman chop eta olmaydi).
+    """
+
+    user: str
+    limit: int | None = None
+    used: int | None = None
+
+
+class QuotaSyncOut(BaseModel):
+    """`POST /api/print-quotas` javobi — agent shu limitlarni keshlab qo'llaydi."""
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "examples": [
+                {
+                    "periodKey": "2026-Q3",
+                    "defaultLimit": 1000,
+                    "users": [{"user": "jane", "limit": 1500, "used": 137}],
+                }
+            ]
+        }
+    )
+
+    period_key: str = Field(
+        serialization_alias="periodKey",
+        description="Davr identifikatori — o'zgarishi agentdagi hisoblagichni nolga tushiradi",
+    )
+    default_limit: int = Field(
+        serialization_alias="defaultLimit",
+        description="Ro'yxatda yo'q foydalanuvchilarga qo'llanadigan limit (-1 — cheklovsiz)",
+    )
+    users: list[QuotaLimitOut] = Field(default_factory=list)

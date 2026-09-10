@@ -5,7 +5,14 @@ yerda faqat SQL to'g'ri qurilishi, davr chegaralari va javob shakli tekshiriladi
 (qiymatlarning aniqligi emas — bu integratsion testlar ishi).
 """
 
+from app.config import settings
+
 PERIOD = {"period_type": "quarter", "year": 2026, "period_no": 3}
+
+# Standart kvota qiymatlari sozlamadan olinadi — testlar `.env` yoki
+# `Settings` dagi o'zgarishga bog'lanib qolmasligi uchun.
+QUARTER_QUOTA = settings.default_quota_quarter
+MONTH_QUOTA = settings.default_quota_month
 
 
 def test_stats_summary_builds_without_error(client):
@@ -20,7 +27,7 @@ def test_stats_summary_builds_without_error(client):
         "totalJobs": 0,
         "successRate": 0.0,
         "activePrinters": 0,
-        "defaultQuota": 300,
+        "defaultQuota": QUARTER_QUOTA,
     }
 
 
@@ -29,13 +36,13 @@ def test_stats_summary_default_quota_for_month(client):
         "/api/stats/summary", params={"period_type": "month", "year": 2026, "period_no": 7}
     )
     assert r.status_code == 200
-    assert r.json()["defaultQuota"] == 200
+    assert r.json()["defaultQuota"] == MONTH_QUOTA
 
 
 def test_stats_summary_default_quota_for_quarter(client):
     r = client.get("/api/stats/summary", params=PERIOD)
     assert r.status_code == 200
-    assert r.json()["defaultQuota"] == 300
+    assert r.json()["defaultQuota"] == QUARTER_QUOTA
 
 
 def test_stats_employees_sql_uses_default_quota_for_quarter(client):
@@ -43,7 +50,7 @@ def test_stats_employees_sql_uses_default_quota_for_quarter(client):
 
     r = client.get("/api/stats/employees", params=PERIOD)
     assert r.status_code == 200
-    assert any(300 in params.values() for params in CAPTURED)
+    assert any(QUARTER_QUOTA in params.values() for params in CAPTURED)
 
 
 def test_stats_employees_sql_uses_default_quota_for_month(client):
@@ -53,7 +60,7 @@ def test_stats_employees_sql_uses_default_quota_for_month(client):
         "/api/stats/employees", params={"period_type": "month", "year": 2026, "period_no": 7}
     )
     assert r.status_code == 200
-    assert any(200 in params.values() for params in CAPTURED)
+    assert any(MONTH_QUOTA in params.values() for params in CAPTURED)
 
 
 def test_stats_departments_sql_uses_default_quota_for_quarter(client):
@@ -61,7 +68,7 @@ def test_stats_departments_sql_uses_default_quota_for_quarter(client):
 
     r = client.get("/api/stats/departments", params=PERIOD)
     assert r.status_code == 200
-    assert any(300 in params.values() for params in CAPTURED)
+    assert any(QUARTER_QUOTA in params.values() for params in CAPTURED)
 
 
 def test_stats_departments_sql_uses_default_quota_for_month(client):
@@ -71,7 +78,7 @@ def test_stats_departments_sql_uses_default_quota_for_month(client):
         "/api/stats/departments", params={"period_type": "month", "year": 2026, "period_no": 7}
     )
     assert r.status_code == 200
-    assert any(200 in params.values() for params in CAPTURED)
+    assert any(MONTH_QUOTA in params.values() for params in CAPTURED)
 
 
 def test_stats_employees_builds_without_error(client):

@@ -13,48 +13,37 @@ const relative = computed(() => formatRelativeMinutes(props.status?.minutesSince
 const absoluteTitle = computed(() => {
   if (!props.status?.lastSyncedAt) return ''
   try {
-    return dateTimeFormat.format(new Date(props.status.lastSyncedAt))
+    return `Oxirgi sinxronizatsiya: ${dateTimeFormat.format(new Date(props.status.lastSyncedAt))}`
   } catch {
     return props.status.lastSyncedAt
   }
+})
+
+/** Sinxron eskirgan bo'lsa ogohlantiruvchi, aks holda axborot ko'rinishi. */
+const tone = computed(() => {
+  const status = props.status
+  if (!status) return 'info'
+  return status.isStale || status.employeeCount === 0 ? 'warning' : 'info'
 })
 
 const message = computed(() => {
   const status = props.status
   if (!status) return ''
   if (status.employeeCount === 0) {
-    return "⚠️ Hali hech qanday xodim yuklanmagan — AD sinxronizatsiyasini ishga tushiring."
+    return "Hali hech qanday xodim yuklanmagan — AD sinxronizatsiyasini ishga tushiring."
   }
   if (status.isStale) {
-    return `⚠️ AD sinxronizatsiyasi to'xtagan bo'lishi mumkin — oxirgi ma'lumot ${relative.value}. Windows'dagi 'PrinterHisob-AdSync' vazifasini tekshiring.`
+    return `AD sinxronizatsiyasi to'xtagan bo'lishi mumkin — oxirgi ma'lumot ${relative.value}. Windows'dagi 'PrinterHisob-AdSync' vazifasini tekshiring.`
   }
-  return `AD sinxron: oxirgi ma'lumot ${relative.value} (${status.activeCount} faol xodim)`
+  return `AD sinxronizatsiyasi normal: oxirgi ma'lumot ${relative.value}, ${status.activeCount} ta faol xodim.`
 })
 </script>
 
 <template>
-  <div v-if="status" class="card ad-sync-banner" :class="{ stale: status.isStale }" :title="absoluteTitle">
-    <AppIcon :name="status.isStale ? 'warning' : 'refresh'" :size="16" />
+  <div v-if="status" class="alert" :class="`alert--${tone}`" :title="absoluteTitle">
+    <span class="alert__icon">
+      <AppIcon :name="tone === 'warning' ? 'warning' : 'refresh'" :size="16" />
+    </span>
     <span>{{ message }}</span>
   </div>
 </template>
-
-<style scoped>
-.ad-sync-banner {
-  display: flex;
-  align-items: center;
-  gap: 0.55rem;
-  padding: 0.6rem 1rem;
-  font-size: 0.85rem;
-  color: var(--color-accent-soft-fg);
-  background: var(--color-accent-soft-bg);
-  border-color: transparent;
-  box-shadow: none;
-}
-
-.ad-sync-banner.stale {
-  background: var(--color-warning-bg);
-  color: var(--color-warning-fg);
-  font-weight: 600;
-}
-</style>

@@ -145,6 +145,60 @@ class Printer(Base):
     last_seen: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
+class AgentQuotaState(Base):
+    r"""Agent bilan kvota almashinuvining so'nggi holati (`POST /api/print-quotas`).
+
+    Har bir `(kompyuter, login, davr)` uchun bitta qator — agent har 5 daqiqada
+    signal yuborgani uchun tarix emas, eng so'nggi holat saqlanadi (`AgentStatus`
+    bilan bir xil yondashuv). Bu jadval ikki savolga javob beradi:
+
+    * agent ayni damda qaysi limitni qo'llayapti (`applied_limit`) — server bergan
+      qiymat (`served_limit`) bilan mos kelmasa, demak javob hali yetib bormagan;
+    * agentning hisobi bizning bazamiz bilan qanchalik mos (`pages_used_reported`
+      va `served_used` farqi).
+
+    `login` normallashtirilgan holda (kichik harf, `DOMAIN\` prefiksisiz) saqlanadi
+    — `app.logins.normalize_login` ga qarang.
+    """
+
+    __tablename__ = "agent_quota_state"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+
+    computer: Mapped[str] = mapped_column(String(255))
+    # Normallashtirilgan login — solishtirish uchun.
+    login: Mapped[str] = mapped_column(String(255))
+    # Agent yuborgan asl shakl (masalan "MADANIYAT\E.Turdiyev") — diagnostika uchun.
+    raw_user: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # Davr identifikatori ("2026-Q3") — o'zgarishi agentda hisoblagichni nolga tushiradi.
+    period_key: Mapped[str] = mapped_column(String(32))
+
+    # Agent aytgan raqamlar.
+    pages_used_here: Mapped[int] = mapped_column(BigInteger, default=0)
+    pages_used_reported: Mapped[int] = mapped_column(BigInteger, default=0)
+    # Agent ayni damda qo'llayotgan limit. NULL — cheklovsiz (agent "null" yuborgan).
+    applied_limit: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    # Biz javobda bergan qiymatlar — keyingi so'rovda agent shularni qo'llagan
+    # bo'lishi kerak; farq bo'lsa javob yetib bormagani ko'rinadi.
+    served_limit: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    served_used: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+
+    reported_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "computer", "login", "period_key", name="uq_agent_quota_state_computer_login_period"
+        ),
+        Index("ix_agent_quota_state_login", "login"),
+        Index("ix_agent_quota_state_period_key", "period_key"),
+        Index("ix_agent_quota_state_reported_at", "reported_at"),
+    )
+
+
 class AgentStatus(Base):
     """Agent (.exe)dan davriy sog'lik signali (heartbeat).
 

@@ -31,11 +31,57 @@ kalitni kiriting — u `X-API-Key` sarlavhasiga qo'yiladi.
 
 ## Endpointlar
 
+To'liq ro'yxat Swagger'da (`/docs`). Agent (`PrintMonitor.exe`) murojaat qiladigan
+uchta endpoint — kontrakti `ENDPOINTS.uz.md` hujjatida belgilangan, **o'zgartirmang**:
+
+| Metod | Yo'l | Auth | Vazifasi |
+|-------|------|------|----------|
+| `POST` | `/api/print-jobs` | `X-API-Key` | Bir kompyuterdan kelgan hodisalar paketini saqlaydi |
+| `POST` | `/api/agent-status` | `X-API-Key` | Agentning sog'lik signali (heartbeat) |
+| `POST` | `/api/print-quotas` | `X-API-Key` | Agent sarfni bildiradi, javobda limitlarni oladi |
+
+Dashboard uchun (JWT `Authorization: Bearer`):
+
 | Metod | Yo'l | Vazifasi |
 |-------|------|----------|
-| `POST` | `/api/print-jobs` | Bir kompyuterdan kelgan hodisalar paketini saqlaydi |
 | `GET` | `/api/print-jobs` | Yozuvlarni filtrlab qaytaradi |
-| `GET` | `/health` | Xizmat va baza holati |
+| `GET` | `/api/stats/*` | Davr bo'yicha statistika (summary, employees, top, ...) |
+| `GET`/`PUT` | `/api/quotas` | Xodim kvotalarini o'qish/belgilash |
+| `GET` | `/health` | Xizmat va baza holati (auth talab qilinmaydi) |
+
+### POST /api/print-quotas
+
+Agent har necha daqiqada shu endpointga murojaat qiladi: so'rovda — shu mashinada
+hisoblangan varaqlar, javobda — server bilgan haqiqiy sarf va qo'llanishi kerak
+bo'lgan limitlar. Chop etish qarorini agent **mahalliy** qabul qiladi, shuning
+uchun bu endpoint ishlamay qolsa ham chop etish to'xtamaydi — agent eski
+keshlangan limitlar bilan davom etadi.
+
+```bash
+curl -X POST http://127.0.0.1:8000/api/print-quotas \
+  -H "Content-Type: application/json" \
+  -d '{"computer":"LAPTOP-JANE","timestamp":"2026-09-10T09:15:00Z",
+       "users":[{"user":"jane","pagesUsedHere":42,"pagesUsed":137,"limit":1000}]}'
+```
+
+```json
+{"periodKey":"2026-Q3","defaultLimit":1000,
+ "users":[{"user":"jane","limit":1500,"used":945}]}
+```
+
+Uch nozik qoida (agent hujjatidan):
+
+* `limit` **yuborilmasa yoki `null`** — "menda fikr yo'q", agent `defaultLimit`ga tushadi;
+* `-1` — aniq cheklovsiz; `0` — so'zma-so'z: umuman chop eta olmaydi;
+* **`periodKey` o'zgarishi agentdagi hisoblagichni nolga tushiradi** — format
+  `app.periods.period_key` orqali barqaror hosil qilinadi (`2026-Q3`).
+
+Foydalanuvchi nomlari registrga sezgir emas va `DOMAIN\` prefiksi olib tashlangan
+holda solishtiriladi (`app.logins.normalize_login`): `MADANIYAT\E.Turdiyev`,
+`e.turdiyev`, `E.TURDIYEV` — bitta odam.
+
+Qaysi davr agentga yuborilishi `AGENT_QUOTA_PERIOD_TYPE` sozlamasida (standart
+`quarter`), standart limit esa `DEFAULT_QUOTA_QUARTER` da (standart `1000`).
 
 ### POST /api/print-jobs
 
@@ -75,7 +121,12 @@ curl "http://127.0.0.1:8000/api/print-jobs?computer=DESKTOP-ABC123&success=false
   tufayli takroriy qator qo'shilmaydi — javobda `inserted: 0, duplicates: N` ko'rinadi.
   Bir paket ichidagi takrorlar ham yig'ib tashlanadi.
 - **Katta paketlar.** 500 qatordan iborat bo'laklarga bo'lib yoziladi (Postgres bitta
-  so'rovda 65535 parametrni qabul qiladi). Paket eng ko'pi 5000 hodisa.
+  so'rovda 65535 parametrni qabul qiladi). Paket eng ko'pi **60 000** hodisa
+  (`MAX_JOBS_PER_BATCH`) — bu agentning buferidan (`MaxBufferedJobs`, standart
+  50 000) ataylab katta. Aks holda uzoq uzilishdan keyin agent butun buferni bitta
+  to'plamda yuboradi, server `422` qaytaradi, agent esa `2xx` olmagani uchun buferni
+  tozalamaydi va o'sha to'plamni abadiy qayta yuboraveradi. nginx tomonida ham mos
+  chegara kerak: `client_max_body_size 32m` (`deploy/nginx.conf`).
 
 ## Autentifikatsiya
 

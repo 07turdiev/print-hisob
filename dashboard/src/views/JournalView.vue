@@ -1,6 +1,8 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import { useJournalPage } from '../composables/useJournalPage'
 import StatusBadge from '../components/StatusBadge.vue'
+import AppIcon from '../components/AppIcon.vue'
 
 const {
   computer,
@@ -10,6 +12,7 @@ const {
   since,
   until,
   page,
+  pageSize,
   totalPages,
   jobs,
   total,
@@ -20,7 +23,8 @@ const {
   prevPage,
 } = useJournalPage()
 
-const dateTimeFormat = new Intl.DateTimeFormat('uz-UZ', { dateStyle: 'medium', timeStyle: 'short' })
+const dateTimeFormat = new Intl.DateTimeFormat('uz-UZ', { dateStyle: 'short', timeStyle: 'short' })
+const numberFormat = new Intl.NumberFormat('uz-UZ')
 
 function formatTimestamp(iso: string): string {
   try {
@@ -29,13 +33,38 @@ function formatTimestamp(iso: string): string {
     return iso
   }
 }
+
+/** Joriy sahifadagi yozuvlar oralig'i, masalan "26–50 / 340". */
+const rangeLabel = computed(() => {
+  if (!total.value) return '0'
+  const from = (page.value - 1) * pageSize.value + 1
+  const to = Math.min(total.value, from + jobs.value.length - 1)
+  return `${numberFormat.format(from)}–${numberFormat.format(to)} / ${numberFormat.format(total.value)}`
+})
+
+const hasFilters = computed(
+  () =>
+    Boolean(computer.value || user.value || printer.value || success.value || since.value || until.value),
+)
+
+function clearFilters() {
+  computer.value = ''
+  user.value = ''
+  printer.value = ''
+  success.value = ''
+  since.value = ''
+  until.value = ''
+}
 </script>
 
 <template>
   <div class="page">
-    <p v-if="error" class="error-banner">{{ error }}</p>
+    <p v-if="error" class="alert alert--danger">
+      <span class="alert__icon"><AppIcon name="warning" :size="16" /></span>
+      <span>{{ error }}</span>
+    </p>
 
-    <div class="filters card">
+    <div class="filter-bar">
       <label class="field">
         <span>Foydalanuvchi</span>
         <input v-model="user" type="text" placeholder="login" />
@@ -64,119 +93,110 @@ function formatTimestamp(iso: string): string {
         <span>Sanagacha</span>
         <input v-model="until" type="date" />
       </label>
+
+      <button type="button" class="btn clear-btn" :disabled="!hasFilters" @click="clearFilters">
+        <AppIcon name="close" :size="14" />
+        Tozalash
+      </button>
     </div>
 
-    <div class="card">
+    <section class="panel">
+      <header class="panel__head">
+        <h2 class="panel__title">
+          <span class="panel__title-icon"><AppIcon name="journal" :size="16" /></span>
+          Chop etish hodisalari
+        </h2>
+        <span class="panel__count">{{ rangeLabel }}</span>
+      </header>
+
       <div class="table-wrap">
         <table>
           <thead>
             <tr>
-              <th>Sana</th>
+              <th class="col-num">T/r</th>
+              <th>Sana va vaqt</th>
               <th>Foydalanuvchi</th>
               <th>Kompyuter</th>
               <th>Hujjat</th>
               <th>Printer</th>
-              <th class="num" title="Varaqlar = sarflangan qog'oz">Varaqlar</th>
-              <th class="num" title="Sahifalar = hujjatdagi betlar">Sahifalar</th>
-              <th>2 tomonlama</th>
-              <th>Holat</th>
+              <th class="num" title="Sarflangan qog'oz (varaq) soni">Varaq</th>
+              <th class="num" title="Hujjatdagi sahifalar soni">Sahifa</th>
+              <th class="col-center">2 tomonlama</th>
+              <th>Natija</th>
             </tr>
           </thead>
           <tbody>
-            <tr v-for="job in jobs" :key="job.id" :class="{ 'row-fail': !job.success }">
+            <tr v-for="(job, i) in jobs" :key="job.id" :class="{ 'row-danger': !job.success }">
+              <td class="col-num">{{ (page - 1) * pageSize + i + 1 }}</td>
               <td class="nowrap">{{ formatTimestamp(job.timestamp) }}</td>
               <td>
                 <div class="user-cell">
-                  <span>{{ job.user }}</span>
+                  <span class="strong">{{ job.user }}</span>
                   <StatusBadge :status="matchStatusFor(job.user)" />
                 </div>
               </td>
-              <td>{{ job.computer }}</td>
-              <td class="doc-cell">{{ job.document }}</td>
+              <td class="nowrap">{{ job.computer }}</td>
+              <td class="doc-cell" :title="job.document">{{ job.document }}</td>
               <td>
                 <div :title="job.jobId ? `Ish ID: ${job.jobId}` : undefined">{{ job.printer }}</div>
-                <div class="muted">{{ job.printerIp }}</div>
-                <div v-if="job.printerMac" class="muted">{{ job.printerMac }}</div>
+                <div class="muted">
+                  <span v-if="job.printerIp">{{ job.printerIp }}</span>
+                  <span v-if="job.printerIp && job.printerMac"> · </span>
+                  <span v-if="job.printerMac">{{ job.printerMac }}</span>
+                </div>
               </td>
-              <td class="num">{{ job.pages }}</td>
-              <td class="num">{{ job.documentPages }}</td>
-              <td class="duplex-cell">
-                <span v-if="job.duplex" class="duplex-yes">Ha</span>
-                <span v-else class="duplex-no">Yo'q</span>
+              <td class="num strong">{{ job.pages }}</td>
+              <td class="num muted">{{ job.documentPages }}</td>
+              <td class="col-center">
+                <span v-if="job.duplex" class="badge badge--accent badge--plain">Ha</span>
+                <span v-else class="muted">—</span>
               </td>
               <td>
-                <span v-if="job.success" class="ok-tag">Muvaffaqiyatli</span>
-                <span v-else class="fail-tag">{{ job.reason ?? 'Xatolik' }}</span>
+                <span v-if="job.success" class="badge badge--success">Muvaffaqiyatli</span>
+                <span v-else class="badge badge--danger" :title="job.reason ?? 'Xatolik'">
+                  <span class="reason-text">{{ job.reason ?? 'Xatolik' }}</span>
+                </span>
               </td>
             </tr>
+
             <tr v-if="!jobs.length">
-              <td colspan="9" class="empty">Filtrlarga mos yozuvlar topilmadi</td>
+              <td colspan="10" class="empty">Filtrlarga mos yozuvlar topilmadi</td>
             </tr>
           </tbody>
         </table>
       </div>
 
-      <div class="pagination">
-        <span class="total-hint">Jami: {{ total }} ta yozuv</span>
+      <footer class="panel__foot">
+        <span>Jami: <strong class="foot-value">{{ numberFormat.format(total) }}</strong> ta yozuv</span>
         <div class="pager">
-          <button type="button" class="btn btn-sm" :disabled="page <= 1" @click="prevPage">&larr; Oldingi</button>
-          <span>{{ page }} / {{ totalPages }}</span>
-          <button type="button" class="btn btn-sm" :disabled="page >= totalPages" @click="nextPage">Keyingi &rarr;</button>
+          <button type="button" class="btn btn-sm" :disabled="page <= 1" @click="prevPage">
+            <AppIcon name="chevron-left" :size="13" />
+            Oldingi
+          </button>
+          <span class="pager__label">{{ page }} / {{ totalPages }}</span>
+          <button type="button" class="btn btn-sm" :disabled="page >= totalPages" @click="nextPage">
+            Keyingi
+            <AppIcon name="chevron-right" :size="13" />
+          </button>
         </div>
-      </div>
-    </div>
+      </footer>
+    </section>
 
-    <p v-if="loading" class="loading-hint">Yuklanmoqda...</p>
+    <p v-if="loading" class="loading-pill">Yuklanmoqda...</p>
   </div>
 </template>
 
 <style scoped>
-.page {
-  display: flex;
-  flex-direction: column;
-  gap: 1.25rem;
-  max-width: 1280px;
-  margin: 0 auto;
-  padding: 1.5rem;
+.clear-btn {
+  margin-left: auto;
 }
 
-.error-banner {
-  background: var(--color-danger-bg);
-  color: var(--color-danger-fg);
-  padding: 0.6rem 1rem;
-  border-radius: var(--radius-sm);
-  margin: 0;
-}
-
-.filters {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 1rem;
-  padding: 0.85rem 1.25rem;
-}
-
-.field {
-  display: flex;
-  flex-direction: column;
-  gap: 0.3rem;
-  font-size: 0.75rem;
-  color: var(--color-text-muted);
-  font-weight: 600;
-}
-
-.field input,
-.field select {
-  font-weight: 400;
-  font-size: 0.88rem;
-  min-width: 8.5rem;
-}
-
-.nowrap {
-  white-space: nowrap;
+.col-center {
+  text-align: center;
 }
 
 .doc-cell {
-  max-width: 14rem;
+  max-width: 16rem;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -185,88 +205,22 @@ function formatTimestamp(iso: string): string {
 .user-cell {
   display: flex;
   align-items: center;
-  gap: 0.4rem;
-}
-
-.muted {
-  color: var(--color-text-muted);
-  font-size: 0.78rem;
-}
-
-.row-fail {
-  background: var(--color-danger-bg);
-}
-
-.duplex-cell {
-  text-align: center;
-}
-
-.duplex-yes {
-  color: var(--color-accent-soft-fg);
-  font-weight: 600;
-  font-size: 0.82rem;
-}
-
-.duplex-no {
-  color: var(--color-text-muted);
-  font-size: 0.82rem;
-}
-
-.ok-tag,
-.fail-tag {
-  display: inline-flex;
-  align-items: center;
-  padding: 0.2rem 0.6rem;
-  border-radius: var(--radius-pill);
-  font-weight: 700;
-  font-size: 0.72rem;
-  letter-spacing: 0.02em;
+  gap: 6px;
   white-space: nowrap;
 }
 
-.ok-tag {
-  background: var(--color-success-bg);
-  color: var(--color-success-fg);
+/* Uzun xatolik matni ustunni cho'zmasin */
+.reason-text {
+  display: inline-block;
+  max-width: 13rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
 }
 
-.fail-tag {
-  background: var(--color-danger-bg);
-  color: var(--color-danger-fg);
-}
-
-.empty {
-  text-align: center;
-  color: var(--color-text-muted);
-  padding: 1.5rem;
-}
-
-.pagination {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: space-between;
-  align-items: center;
-  gap: 0.75rem;
-  margin-top: 1rem;
-  font-size: 0.85rem;
-  color: var(--color-text-muted);
-}
-
-.pager {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-}
-
-.loading-hint {
-  position: fixed;
-  bottom: 1rem;
-  right: 1rem;
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  box-shadow: var(--shadow-pop);
-  padding: 0.45rem 0.9rem;
-  border-radius: var(--radius-pill);
-  color: var(--color-text-muted);
-  font-size: 0.82rem;
+.foot-value {
+  color: var(--color-text);
+  font-variant-numeric: tabular-nums;
 }
 </style>

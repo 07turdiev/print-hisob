@@ -3,6 +3,7 @@ import { onMounted, watch } from 'vue'
 import type { PeriodType } from '../api/types'
 import { usePeriodStore } from '../stores/period'
 import { useDashboardData } from '../composables/useDashboardData'
+import AppIcon from '../components/AppIcon.vue'
 import DepartmentFilter from '../components/DepartmentFilter.vue'
 import KpiCards from '../components/KpiCards.vue'
 import EmployeeQuotaTable from '../components/EmployeeQuotaTable.vue'
@@ -33,16 +34,22 @@ const {
 
 function handleQuotaSave(login: string, allocatedPages: number) {
   saveQuota(login, allocatedPages).catch(() => {
-    // Error surface is intentionally quiet here; a toast/error banner could be added later.
+    // Xatolik bo'lsa jadval o'z holatini tiklaydi; bu yerda ovoz chiqarmaymiz.
   })
 }
 </script>
 
 <template>
-  <div class="dashboard">
-    <DepartmentFilter :department-options="departmentOptions" />
+  <div class="page">
+    <p v-if="error" class="alert alert--danger">
+      <span class="alert__icon"><AppIcon name="warning" :size="16" /></span>
+      <span>{{ error }}</span>
+    </p>
 
-    <p v-if="error" class="error-banner">{{ error }}</p>
+    <div class="filter-bar">
+      <span class="filter-bar__icon"><AppIcon name="filter" :size="15" /></span>
+      <DepartmentFilter :department-options="departmentOptions" />
+    </div>
 
     <KpiCards :summary="summary" />
 
@@ -61,52 +68,23 @@ function handleQuotaSave(login: string, allocatedPages: number) {
 
     <TimeseriesChart :points="timeseries" />
 
-    <div class="top-grid">
-      <TopList title="Printerlar bo'yicha eng ko'p" :items="topStats?.printers ?? []" />
-      <TopList title="Kompyuterlar bo'yicha eng ko'p" :items="topStats?.computers ?? []" />
-      <TopList title="Bo'limlar bo'yicha eng ko'p" :items="topStats?.departments ?? []" />
+    <div class="grid-3">
+      <TopList title="Eng ko'p ishlatilgan printerlar" icon="printers" :items="topStats?.printers ?? []" />
+      <TopList title="Eng ko'p chop etgan kompyuterlar" icon="agents" :items="topStats?.computers ?? []" />
+      <TopList title="Eng ko'p chop etgan bo'limlar" icon="departments" :items="topStats?.departments ?? []" />
     </div>
 
     <FailuresPanel :failures="failures" />
 
-    <p v-if="loading" class="loading-hint">Yuklanmoqda...</p>
+    <p v-if="loading" class="loading-pill">Yuklanmoqda...</p>
   </div>
 </template>
 
 <style scoped>
-.dashboard {
-  display: flex;
-  flex-direction: column;
-  gap: 1.25rem;
-  max-width: 1280px;
-  margin: 0 auto;
-  padding: 1.5rem;
-}
-
-.top-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-  gap: 1.25rem;
-}
-
-.error-banner {
-  background: var(--color-danger-bg);
-  color: var(--color-danger-fg);
-  padding: 0.6rem 1rem;
-  border-radius: var(--radius-sm);
-  margin: 0;
-}
-
-.loading-hint {
-  position: fixed;
-  bottom: 1rem;
-  right: 1rem;
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  box-shadow: var(--shadow-pop);
-  padding: 0.45rem 0.9rem;
-  border-radius: var(--radius-pill);
+.filter-bar__icon {
+  display: inline-flex;
+  align-items: center;
+  height: 32px;
   color: var(--color-text-muted);
-  font-size: 0.82rem;
 }
 </style>

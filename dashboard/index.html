@@ -4,7 +4,24 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0f5ba8" />
+    <meta name="description" content="Printer Hisob — qog'oz sarfini nazorat qilish tizimi" />
     <title>Printer Hisob</title>
+    <script>
+      // Mavzuni Vue yuklanishidan oldin qo'llaymiz — sahifa "oqarib" ketmasligi uchun.
+      // Kalit `composables/useTheme.ts` dagi bilan bir xil bo'lishi shart.
+      (function () {
+        try {
+          var saved = localStorage.getItem('printerhisob.theme')
+          var dark =
+            saved === 'dark' ||
+            (saved !== 'light' && window.matchMedia('(prefers-color-scheme: dark)').matches)
+          document.documentElement.dataset.theme = dark ? 'dark' : 'light'
+        } catch (e) {
+          document.documentElement.dataset.theme = 'light'
+        }
+      })()
+    </script>
   </head>
   <body>
     <div id="app"></div>

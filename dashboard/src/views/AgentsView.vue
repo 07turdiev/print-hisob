@@ -1,15 +1,9 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import { useAgentsPage } from '../composables/useAgentsPage'
 import type { Agent } from '../api/types'
 import AppIcon from '../components/AppIcon.vue'
-
-const KPI_ICONS = {
-  total: 'agents',
-  working: 'check-circle',
-  error: 'warning',
-  stale: 'warning',
-  restarted: 'refresh',
-} as const
+import StatTile from '../components/StatTile.vue'
 
 const {
   search,
@@ -29,7 +23,7 @@ const numberFormat = new Intl.NumberFormat('uz-UZ')
 const dateTimeFormat = new Intl.DateTimeFormat('uz-UZ', { dateStyle: 'medium', timeStyle: 'short' })
 
 function fmt(value: number | undefined): string {
-  return value === undefined ? '-' : numberFormat.format(value)
+  return value === undefined ? '—' : numberFormat.format(value)
 }
 
 function formatTimestamp(iso: string): string {
@@ -40,7 +34,7 @@ function formatTimestamp(iso: string): string {
   }
 }
 
-/** Human-friendly relative time in Uzbek; the workstation clock could rarely put this at/below zero. */
+/** O'zbekcha nisbiy vaqt; ish stantsiyasi soati kamdan-kam holda nolga teng bo'lishi mumkin. */
 function formatRelative(minutes: number): string {
   if (minutes <= 0) return 'hozir'
   if (minutes < 60) return `${minutes} daqiqa oldin`
@@ -50,7 +44,7 @@ function formatRelative(minutes: number): string {
   return `${days} kun oldin`
 }
 
-/** Formats a duration in seconds as a short human-readable Uzbek string, e.g. "3 soat 20 daqiqa". */
+/** Soniyalarni qisqa o'zbekcha davomiylikka aylantiradi, masalan "3 soat 20 daqiqa". */
 function formatDuration(seconds: number | null | undefined): string {
   if (seconds === null || seconds === undefined) return '—'
   if (seconds < 60) return `${Math.floor(seconds)} soniya`
@@ -76,140 +70,165 @@ function bootTimeTitle(agent: Agent): string {
 
 type StatusKind = 'ok' | 'error' | 'stale'
 
-/** Stale (no heartbeat) takes precedence over the raw `working` flag in the badge shown. */
+/** Aloqa yo'qligi (stale) `working` bayrog'idan ustun turadi. */
 function statusKind(agent: Agent): StatusKind {
   if (agent.isStale) return 'stale'
   if (!agent.working) return 'error'
   return 'ok'
 }
 
-const STATUS_LABEL: Record<StatusKind, string> = {
-  ok: 'Ishlayapti',
-  error: 'Xato',
-  stale: "Aloqa yo'q",
+const STATUS_META: Record<StatusKind, { label: string; tone: string }> = {
+  ok: { label: 'Ishlayapti', tone: 'success' },
+  error: { label: 'Xato', tone: 'danger' },
+  stale: { label: "Aloqa yo'q", tone: 'muted' },
 }
 
-function sortIndicator(key: string): string {
+function sortCaret(key: string): string {
   if (sortKey.value !== key) return ''
-  return sortDesc.value ? ' ▼' : ' ▲'
+  return sortDesc.value ? '▼' : '▲'
+}
+
+const hasFilters = computed(
+  () => Boolean(search.value) || onlyErrors.value || onlyStale.value || onlyRecentlyRestarted.value,
+)
+
+function clearFilters() {
+  search.value = ''
+  onlyErrors.value = false
+  onlyStale.value = false
+  onlyRecentlyRestarted.value = false
 }
 </script>
 
 <template>
   <div class="page">
-    <p v-if="error" class="error-banner">{{ error }}</p>
+    <p v-if="error" class="alert alert--danger">
+      <span class="alert__icon"><AppIcon name="warning" :size="16" /></span>
+      <span>{{ error }}</span>
+    </p>
 
-    <div class="kpi-grid">
-      <div class="card kpi">
-        <span class="kpi-icon"><AppIcon :name="KPI_ICONS.total" :size="18" /></span>
-        <div class="kpi-body">
-          <span class="kpi-label">Jami agentlar</span>
-          <span class="kpi-value">{{ fmt(summary?.total) }}</span>
-        </div>
-      </div>
-      <div class="card kpi">
-        <span class="kpi-icon kpi-icon--ok"><AppIcon :name="KPI_ICONS.working" :size="18" /></span>
-        <div class="kpi-body">
-          <span class="kpi-label">Ishlayapti</span>
-          <span class="kpi-value kpi-ok">{{ fmt(summary?.working) }}</span>
-        </div>
-      </div>
-      <div class="card kpi" :class="{ 'kpi-alert': (summary?.notWorking ?? 0) > 0 }">
-        <span class="kpi-icon" :class="{ 'kpi-icon--danger': (summary?.notWorking ?? 0) > 0 }">
-          <AppIcon :name="KPI_ICONS.error" :size="18" />
-        </span>
-        <div class="kpi-body">
-          <span class="kpi-label">Xato</span>
-          <span class="kpi-value" :class="{ 'kpi-danger': (summary?.notWorking ?? 0) > 0 }">
-            {{ fmt(summary?.notWorking) }}
-          </span>
-        </div>
-      </div>
-      <div class="card kpi" :class="{ 'kpi-alert': (summary?.stale ?? 0) > 0 }">
-        <span class="kpi-icon" :class="{ 'kpi-icon--warning': (summary?.stale ?? 0) > 0 }">
-          <AppIcon :name="KPI_ICONS.stale" :size="18" />
-        </span>
-        <div class="kpi-body">
-          <span class="kpi-label">Aloqa yo'q</span>
-          <span class="kpi-value" :class="{ 'kpi-warning': (summary?.stale ?? 0) > 0 }">
-            {{ fmt(summary?.stale) }}
-          </span>
-        </div>
-      </div>
-      <div class="card kpi" :class="{ 'kpi-alert': (summary?.recentlyRestarted ?? 0) > 0 }">
-        <span class="kpi-icon" :class="{ 'kpi-icon--warning': (summary?.recentlyRestarted ?? 0) > 0 }">
-          <AppIcon :name="KPI_ICONS.restarted" :size="18" />
-        </span>
-        <div class="kpi-body">
-          <span class="kpi-label">Yaqinda qayta ishga tushgan</span>
-          <span class="kpi-value" :class="{ 'kpi-warning': (summary?.recentlyRestarted ?? 0) > 0 }">
-            {{ fmt(summary?.recentlyRestarted) }}
-          </span>
-        </div>
-      </div>
+    <div class="grid-3">
+      <StatTile label="Jami agentlar" :value="fmt(summary?.total)" icon="agents" tone="muted" hint="Ro'yxatga olingan ish stantsiyalari" />
+      <StatTile label="Ishlayapti" :value="fmt(summary?.working)" icon="check-circle" tone="success" />
+      <StatTile
+        label="Xato"
+        :value="fmt(summary?.notWorking)"
+        icon="warning"
+        :tone="(summary?.notWorking ?? 0) > 0 ? 'danger' : 'muted'"
+      />
+      <StatTile
+        label="Aloqa yo'q"
+        :value="fmt(summary?.stale)"
+        icon="clock"
+        :tone="(summary?.stale ?? 0) > 0 ? 'warning' : 'muted'"
+      />
+      <StatTile
+        label="Yaqinda qayta ishga tushgan"
+        :value="fmt(summary?.recentlyRestarted)"
+        icon="refresh"
+        :tone="(summary?.recentlyRestarted ?? 0) > 0 ? 'warning' : 'muted'"
+        hint="Takrorlansa — agent qulab tushayotgan bo'lishi mumkin"
+      />
     </div>
 
-    <div class="filters card">
-      <label class="search-box">
-        <AppIcon name="search" :size="16" />
-        <input v-model="search" type="text" placeholder="Kompyuter yoki foydalanuvchi bo'yicha qidirish" />
+    <div class="filter-bar">
+      <label class="field field--grow">
+        <span>Qidiruv</span>
+        <span class="search-box">
+          <AppIcon name="search" :size="15" />
+          <input v-model="search" type="text" placeholder="Kompyuter yoki foydalanuvchi bo'yicha qidirish" />
+        </span>
       </label>
 
-      <label class="toggle">
-        <input v-model="onlyErrors" type="checkbox" />
-        <span>Faqat xatolar</span>
-      </label>
+      <div class="field">
+        <span class="field-label">Filtrlar</span>
+        <div class="checks">
+          <label class="check"><input v-model="onlyErrors" type="checkbox" /> Faqat xatolar</label>
+          <label class="check"><input v-model="onlyStale" type="checkbox" /> Faqat aloqa yo'q</label>
+          <label class="check">
+            <input v-model="onlyRecentlyRestarted" type="checkbox" /> Faqat qayta ishga tushganlar
+          </label>
+        </div>
+      </div>
 
-      <label class="toggle">
-        <input v-model="onlyStale" type="checkbox" />
-        <span>Faqat aloqa yo'q</span>
-      </label>
-
-      <label class="toggle">
-        <input v-model="onlyRecentlyRestarted" type="checkbox" />
-        <span>Faqat qayta ishga tushganlar</span>
-      </label>
+      <button type="button" class="btn clear-btn" :disabled="!hasFilters" @click="clearFilters">
+        <AppIcon name="close" :size="14" />
+        Tozalash
+      </button>
     </div>
 
-    <div class="card">
+    <section class="panel">
+      <header class="panel__head">
+        <h2 class="panel__title">
+          <span class="panel__title-icon"><AppIcon name="agents" :size="16" /></span>
+          Agentlar ro'yxati
+        </h2>
+        <span class="panel__count">{{ agents.length }} ta yozuv</span>
+      </header>
+
       <div class="table-wrap">
         <table>
           <thead>
             <tr>
-              <th class="sortable" @click="setSort('computer')">Kompyuter{{ sortIndicator('computer') }}</th>
-              <th class="sortable" @click="setSort('username')">Foydalanuvchi{{ sortIndicator('username') }}</th>
-              <th class="sortable" @click="setSort('version')">Versiya{{ sortIndicator('version') }}</th>
-              <th class="sortable" @click="setSort('status')">Holat{{ sortIndicator('status') }}</th>
-              <th class="sortable" @click="setSort('detail')">Tafsilot{{ sortIndicator('detail') }}</th>
-              <th class="sortable" @click="setSort('reportedAt')">Oxirgi signal{{ sortIndicator('reportedAt') }}</th>
+              <th class="col-num">T/r</th>
+              <th class="sortable" @click="setSort('computer')">
+                Kompyuter <span class="sort-caret">{{ sortCaret('computer') }}</span>
+              </th>
+              <th class="sortable" @click="setSort('username')">
+                Foydalanuvchi <span class="sort-caret">{{ sortCaret('username') }}</span>
+              </th>
+              <th class="sortable" @click="setSort('version')">
+                Versiya <span class="sort-caret">{{ sortCaret('version') }}</span>
+              </th>
+              <th class="sortable" @click="setSort('status')">
+                Holat <span class="sort-caret">{{ sortCaret('status') }}</span>
+              </th>
+              <th class="sortable" @click="setSort('detail')">
+                Tafsilot <span class="sort-caret">{{ sortCaret('detail') }}</span>
+              </th>
+              <th class="sortable" @click="setSort('reportedAt')">
+                Oxirgi signal <span class="sort-caret">{{ sortCaret('reportedAt') }}</span>
+              </th>
               <th class="sortable" @click="setSort('uptimeSeconds')">
-                Kompyuter ishlagan{{ sortIndicator('uptimeSeconds') }}
+                Kompyuter ishlagan <span class="sort-caret">{{ sortCaret('uptimeSeconds') }}</span>
               </th>
               <th class="sortable" @click="setSort('agentUptimeSeconds')">
-                Agent ishlagan{{ sortIndicator('agentUptimeSeconds') }}
+                Agent ishlagan <span class="sort-caret">{{ sortCaret('agentUptimeSeconds') }}</span>
               </th>
             </tr>
           </thead>
           <tbody>
             <tr
-              v-for="agent in agents"
+              v-for="(agent, i) in agents"
               :key="agent.computer"
-              :class="{ 'row-error': statusKind(agent) === 'error', 'row-stale': statusKind(agent) === 'stale' }"
+              :class="{
+                'row-danger': statusKind(agent) === 'error',
+                'row-muted': statusKind(agent) === 'stale',
+              }"
             >
-              <td>{{ agent.computer }}</td>
-              <td>{{ agent.username }}</td>
-              <td>{{ agent.version }}</td>
+              <td class="col-num">{{ i + 1 }}</td>
+              <td class="strong nowrap">{{ agent.computer }}</td>
+              <td class="nowrap">{{ agent.username }}</td>
+              <td class="nowrap muted">{{ agent.version }}</td>
               <td>
-                <span class="badge" :class="`badge--${statusKind(agent)}`">{{ STATUS_LABEL[statusKind(agent)] }}</span>
-                <span v-if="agent.recentlyRestarted" class="badge badge--restarted" title="Agent yaqinda qayta ishga tushgan">
-                  ⟳ qayta ishga tushgan
-                </span>
+                <div class="status-cell">
+                  <span class="badge" :class="`badge--${STATUS_META[statusKind(agent)].tone}`">
+                    {{ STATUS_META[statusKind(agent)].label }}
+                  </span>
+                  <span
+                    v-if="agent.recentlyRestarted"
+                    class="badge badge--warning badge--plain"
+                    title="Agent yaqinda qayta ishga tushgan"
+                  >
+                    <AppIcon name="refresh" :size="11" /> qayta ishga tushgan
+                  </span>
+                </div>
               </td>
-              <td class="detail-cell">{{ agent.detail ?? '—' }}</td>
+              <td class="detail-cell" :title="agent.detail ?? ''">{{ agent.detail ?? '—' }}</td>
               <td class="nowrap" :title="formatTimestamp(agent.reportedAt)">
                 {{ formatRelative(agent.minutesSinceReport) }}
               </td>
-              <td class="nowrap" :title="bootTimeTitle(agent)">
+              <td class="nowrap muted" :title="bootTimeTitle(agent)">
                 {{ formatDuration(agent.uptimeSeconds) }}
               </td>
               <td
@@ -224,169 +243,37 @@ function sortIndicator(key: string): string {
                 {{ formatDuration(agent.agentUptimeSeconds) }}
               </td>
             </tr>
+
             <tr v-if="!agents.length">
-              <td colspan="8" class="empty">Hozircha hech qaysi agentdan signal kelmagan.</td>
+              <td colspan="9" class="empty">Hozircha hech qaysi agentdan signal kelmagan.</td>
             </tr>
           </tbody>
         </table>
       </div>
-    </div>
+    </section>
 
-    <p v-if="loading" class="loading-hint">Yuklanmoqda...</p>
+    <p v-if="loading" class="loading-pill">Yuklanmoqda...</p>
   </div>
 </template>
 
 <style scoped>
-.page {
-  display: flex;
-  flex-direction: column;
-  gap: 1.25rem;
-  max-width: 1280px;
-  margin: 0 auto;
-  padding: 1.5rem;
-}
-
-.error-banner {
-  background: var(--color-danger-bg);
-  color: var(--color-danger-fg);
-  padding: 0.6rem 1rem;
-  border-radius: var(--radius-sm);
-  margin: 0;
-}
-
-.kpi-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 1rem;
-}
-
-.kpi {
+.checks {
   display: flex;
   align-items: center;
-  gap: 0.9rem;
-}
-
-.kpi-icon {
-  flex-shrink: 0;
-  width: 2.6rem;
-  height: 2.6rem;
-  border-radius: var(--radius-sm);
-  background: var(--color-accent-soft-bg);
-  color: var(--color-accent-soft-fg);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.kpi-icon--ok {
-  background: var(--color-success-bg);
-  color: var(--color-success-fg);
-}
-
-.kpi-icon--danger {
-  background: var(--color-danger-bg);
-  color: var(--color-danger-fg);
-}
-
-.kpi-icon--warning {
-  background: var(--color-warning-bg);
-  color: var(--color-warning-fg);
-}
-
-.kpi-body {
-  display: flex;
-  flex-direction: column;
-  gap: 0.3rem;
-  min-width: 0;
-}
-
-.kpi-label {
-  font-size: 0.78rem;
-  color: var(--color-text-muted);
-  font-weight: 600;
-}
-
-.kpi-value {
-  font-size: 1.65rem;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-  line-height: 1.1;
-}
-
-.kpi-ok {
-  color: var(--color-success-fg);
-}
-
-.kpi-danger {
-  color: var(--color-danger-fg);
-}
-
-.kpi-warning {
-  color: var(--color-warning-fg);
-}
-
-.kpi-alert {
-  border-color: var(--color-warning-fg);
-}
-
-.filters {
-  display: flex;
   flex-wrap: wrap;
-  gap: 1.25rem;
-  align-items: center;
-  padding: 0.85rem 1.25rem;
+  gap: var(--space-3);
+  height: 32px;
 }
 
-.search-box {
+.clear-btn {
+  margin-left: auto;
+}
+
+.status-cell {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  padding: 0 0.7rem;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  color: var(--color-text-muted);
-  min-width: 18rem;
-  flex: 1;
-  height: 36px;
-  transition: border-color var(--transition), box-shadow var(--transition);
-}
-
-.search-box:focus-within {
-  border-color: var(--color-accent);
-  box-shadow: var(--focus-ring);
-}
-
-.search-box input {
-  border: none;
-  height: auto;
-  padding: 0;
-  background: transparent;
-  color: var(--color-text);
-  flex: 1;
-  font-size: 0.9rem;
-}
-
-.search-box input:focus {
-  outline: none;
-  box-shadow: none;
-}
-
-.toggle {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-  font-size: 0.88rem;
-  font-weight: 600;
-  color: var(--color-text-muted);
-  white-space: nowrap;
-}
-
-th.sortable {
-  cursor: pointer;
-}
-
-.nowrap {
-  white-space: nowrap;
+  gap: 5px;
+  flex-wrap: wrap;
 }
 
 .detail-cell {
@@ -396,78 +283,8 @@ th.sortable {
   white-space: nowrap;
 }
 
-.row-error {
-  background: var(--color-danger-bg);
-}
-
-.row-stale {
-  background: var(--color-muted-bg);
-}
-
-.badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  padding: 0.2rem 0.6rem;
-  border-radius: var(--radius-pill);
-  font-size: 0.72rem;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-  white-space: nowrap;
-}
-
-.badge::before {
-  content: '';
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: currentColor;
-  flex-shrink: 0;
-}
-
-.badge--ok {
-  background: var(--color-success-bg);
-  color: var(--color-success-fg);
-}
-
-.badge--error {
-  background: var(--color-danger-bg);
-  color: var(--color-danger-fg);
-}
-
-.badge--stale {
-  background: var(--color-muted-bg);
-  color: var(--color-muted-fg);
-}
-
-.badge--restarted {
-  background: var(--color-warning-bg);
-  color: var(--color-warning-fg);
-  margin-left: 0.4rem;
-}
-
 .cell-restarted {
-  background: var(--color-warning-bg);
   color: var(--color-warning-fg);
-  border-radius: var(--radius-sm);
-}
-
-.empty {
-  text-align: center;
-  color: var(--color-text-muted);
-  padding: 1.5rem;
-}
-
-.loading-hint {
-  position: fixed;
-  bottom: 1rem;
-  right: 1rem;
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  box-shadow: var(--shadow-pop);
-  padding: 0.45rem 0.9rem;
-  border-radius: var(--radius-pill);
-  color: var(--color-text-muted);
-  font-size: 0.82rem;
+  font-weight: 600;
 }
 </style>
