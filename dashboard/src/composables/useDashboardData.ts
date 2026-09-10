@@ -2,6 +2,7 @@ import { computed, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import {
   ApiError,
+  getDepartmentStats,
   getEmployeeStats,
   getFailures,
   getSummary,
@@ -10,6 +11,7 @@ import {
   putQuotas,
 } from '../api/client'
 import type {
+  DepartmentStat,
   EmployeeStat,
   FailureReason,
   StatsSummary,
@@ -19,10 +21,13 @@ import type {
 import { usePeriodStore } from '../stores/period'
 
 /**
- * Loads every /api/stats/* panel for the currently selected period and keeps
- * them in sync whenever year/periodNo/periodType changes. The department
- * filter is applied client-side to the employee list, since the backend does
- * not support filtering these aggregate endpoints by department.
+ * Loads every /api/stats/* panel for the currently selected period and keeps them in
+ * sync whenever year/periodNo/periodType/department changes.
+ *
+ * Bo'lim filtri **serverga** yuboriladi — shunda KPI kartochkalari, grafik, top
+ * ro'yxatlar va xatoliklar ham tanlangan bo'lim bo'yicha hisoblanadi. (Ilgari filtr
+ * faqat jadvalga qo'llanardi va yuqoridagi raqamlar butun tashkilotniki bo'lib
+ * qolardi — bu chalg'ituvchi edi.)
  */
 export function useDashboardData() {
   const periodStore = usePeriodStore()
@@ -33,6 +38,8 @@ export function useDashboardData() {
   const timeseries = ref<TimeseriesPoint[]>([])
   const topStats = ref<TopStats | null>(null)
   const failures = ref<FailureReason[]>([])
+  /** Filtrsiz bo'limlar ro'yxati — tanlov ro'yxati filtr tufayli qisqarib qolmasligi uchun. */
+  const departments = ref<DepartmentStat[]>([])
 
   const loading = ref(false)
   const error = ref<string | null>(null)
@@ -40,30 +47,36 @@ export function useDashboardData() {
   async function reload() {
     loading.value = true
     error.value = null
-    // The department filter is applied client-side below (not sent to the
-    // server) so the dropdown option list keeps showing every available choice.
-    const params = { periodType: periodType.value, year: year.value, periodNo: periodNo.value }
+
+    const period = { periodType: periodType.value, year: year.value, periodNo: periodNo.value }
+    const params = { ...period, department: department.value || undefined }
+
     try {
-      const [summaryRes, employeesRes, timeseriesRes, topRes, failuresRes] = await Promise.all([
-        getSummary(params),
-        getEmployeeStats(params),
-        getTimeseries(params),
-        getTopStats(params),
-        getFailures(params),
-      ])
+      const [summaryRes, employeesRes, timeseriesRes, topRes, failuresRes, departmentsRes] =
+        await Promise.all([
+          getSummary(params),
+          getEmployeeStats(params),
+          getTimeseries(params),
+          getTopStats(params),
+          getFailures(params),
+          // Ataylab `params` emas, `period`: tanlov ro'yxati har doim to'liq bo'lishi
+          // kerak, aks holda bo'lim tanlangach boshqasiga o'tib bo'lmay qoladi.
+          getDepartmentStats(period),
+        ])
       summary.value = summaryRes
       employees.value = employeesRes
       timeseries.value = timeseriesRes
       topStats.value = topRes
       failures.value = failuresRes
+      departments.value = departmentsRes
     } catch (err) {
-      error.value = err instanceof ApiError ? err.message : 'Maʻlumotlarni yuklab boʻlmadi'
+      error.value = err instanceof ApiError ? err.message : "Ma'lumotlarni yuklab bo'lmadi"
     } finally {
       loading.value = false
     }
   }
 
-  watch([periodType, year, periodNo], reload, { immediate: true })
+  watch([periodType, year, periodNo, department], reload, { immediate: true })
 
   /** Saves one employee's quota via PUT /api/quotas and patches the local list in place. */
   async function saveQuota(login: string, allocatedPages: number) {
@@ -82,29 +95,22 @@ export function useDashboardData() {
     }
   }
 
-  const departmentOptions = computed(() => {
-    const set = new Set<string>()
-    for (const emp of employees.value) {
-      if (emp.department) set.add(emp.department)
-    }
-    return Array.from(set).sort()
-  })
-
-  const filteredEmployees = computed(() =>
-    employees.value.filter((emp) => {
-      if (department.value && emp.department !== department.value) return false
-      return true
-    }),
+  const departmentOptions = computed(() =>
+    departments.value
+      .map((d) => d.name)
+      .filter(Boolean)
+      .sort(),
   )
 
+  /** AD'da topilmagan loginlar. Bo'lim filtri faol bo'lsa server ularni allaqachon
+   *  chiqarib tashlagan bo'ladi (bo'limi yo'q), shuning uchun ro'yxat bo'sh bo'ladi. */
   const unmatchedEmployees = computed(() =>
-    filteredEmployees.value.filter((emp) => emp.matchStatus === 'unmatched'),
+    employees.value.filter((emp) => emp.matchStatus === 'unmatched'),
   )
 
   return {
     summary,
-    employees: filteredEmployees,
-    allEmployees: employees,
+    employees,
     unmatchedEmployees,
     timeseries,
     topStats,

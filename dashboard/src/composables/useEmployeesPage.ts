@@ -81,6 +81,29 @@ export function useEmployeesPage() {
   watch(search, scheduleReload)
   loadDirectoryOptions()
 
+  /**
+   * AD ro'yxati (`/api/employees`) serverda filtrlanadi, sarf statistikasi
+   * (`/api/stats/employees`) esa har doim to'liq keladi. Quyidagi birlashtirishda
+   * statistikada bor, lekin filtrlangan AD ro'yxatida yo'q qatorlar qo'shiladi —
+   * ular ham xuddi shu filtrlardan o'tishi shart, aks holda tanlangan bo'lim,
+   * qidiruv va holat filtrlari butunlay chetlab o'tiladi.
+   */
+  function statRowPassesFilters(stat: EmployeeStat): boolean {
+    // Bo'lim filtri: bu qatorlar yo AD'da umuman yo'q (bo'limi ham yo'q), yo
+    // boshqa bo'limga tegishli — ikkala holatda ham mos kelmaydi. Backend
+    // `/api/stats/employees?department=...` da aynan shunday ishlaydi.
+    if (department.value) return false
+    // Holat filtri: AD'da topilmagan login faol ham, ketgan ham emas.
+    if (activeFilter.value) return false
+
+    const query = search.value.trim().toLowerCase()
+    if (!query) return true
+    return (
+      stat.login.toLowerCase().includes(query) ||
+      (stat.fullName ?? '').toLowerCase().includes(query)
+    )
+  }
+
   const rows = computed<MergedEmployeeRow[]>(() => {
     const statMap = new Map(stats.value.map((s) => [s.login, s]))
     const quotaMap = new Map(quotas.value.map((q) => [q.login, q.allocatedPages]))
@@ -105,9 +128,12 @@ export function useEmployeesPage() {
       })
     }
 
-    // Logins with usage but no AD record (unmatched) only exist in the stats response.
+    // Sarfi bor, lekin filtrlangan AD ro'yxatiga tushmagan loginlar — odatda
+    // AD'da umuman topilmaganlar (unmatched). Faqat joriy filtrlarga mos
+    // kelganlari qo'shiladi.
     for (const stat of stats.value) {
       if (seen.has(stat.login)) continue
+      if (!statRowPassesFilters(stat)) continue
       result.push({
         login: stat.login,
         fullName: stat.fullName,

@@ -33,6 +33,19 @@ function compareNullableNumber(a: number | null, b: number | null, dir: 1 | -1):
   return dir * (a - b)
 }
 
+/**
+ * Matn ustunlarini solishtirish — bo'sh qiymat har doim oxirida turadi.
+ * `username` hech kim tizimga kirmagan mashinada `null` bo'ladi (agent `""` yuboradi),
+ * `version` esa eski agentlarda yo'q — shuning uchun to'g'ridan-to'g'ri
+ * `localeCompare` chaqirib bo'lmaydi.
+ */
+function compareNullableText(a: string | null, b: string | null, dir: 1 | -1): number {
+  if (!a && !b) return 0
+  if (!a) return 1
+  if (!b) return -1
+  return dir * a.localeCompare(b)
+}
+
 /** Drives the Agentlar page: polls the print-agent heartbeat list and its summary counters. */
 export function useAgentsPage() {
   const search = ref('')
@@ -106,11 +119,11 @@ export function useAgentsPage() {
         case 'computer':
           return dir * a.computer.localeCompare(b.computer)
         case 'username':
-          return dir * a.username.localeCompare(b.username)
+          return compareNullableText(a.username, b.username, dir as 1 | -1)
         case 'version':
-          return dir * a.version.localeCompare(b.version)
+          return compareNullableText(a.version, b.version, dir as 1 | -1)
         case 'detail':
-          return dir * (a.detail ?? '').localeCompare(b.detail ?? '')
+          return compareNullableText(a.detail, b.detail, dir as 1 | -1)
         case 'reportedAt':
           return dir * (a.minutesSinceReport - b.minutesSinceReport)
         case 'uptimeSeconds':

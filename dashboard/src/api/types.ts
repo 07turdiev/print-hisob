@@ -204,9 +204,11 @@ export interface PrintJobPage {
 /** One row from GET /api/agents — the last reported heartbeat of a workstation's print agent. */
 export interface Agent {
   computer: string
-  /** Person's display name (not a login) as reported by the agent. */
-  username: string
-  version: string
+  /** Person's display name (not a login) as reported by the agent.
+   *  Null when nobody is signed in (lock/login screen) — the agent sends "". */
+  username: string | null
+  /** Agent version; null for agents that don't report it. */
+  version: string | null
   working: boolean
   /** Error/status message from the agent; null when everything is fine. */
   detail: string | null

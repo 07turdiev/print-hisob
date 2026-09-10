@@ -208,8 +208,12 @@ function clearFilters() {
             >
               <td class="col-num">{{ i + 1 }}</td>
               <td class="strong nowrap">{{ agent.computer }}</td>
-              <td class="nowrap">{{ agent.username }}</td>
-              <td class="nowrap muted">{{ agent.version }}</td>
+              <!-- Hech kim tizimga kirmagan bo'lsa (qulf ekrani) username bo'sh keladi -->
+              <td class="nowrap">
+                <span v-if="agent.username">{{ agent.username }}</span>
+                <span v-else class="muted" title="Hech kim tizimga kirmagan">—</span>
+              </td>
+              <td class="nowrap muted">{{ agent.version ?? '—' }}</td>
               <td>
                 <div class="status-cell">
                   <span class="badge" :class="`badge--${STATUS_META[statusKind(agent)].tone}`">
