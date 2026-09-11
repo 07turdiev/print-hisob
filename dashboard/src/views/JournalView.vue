@@ -75,7 +75,7 @@ function clearFilters() {
       </label>
       <label class="field">
         <span>Printer</span>
-        <input v-model="printer" type="text" placeholder="Printer nomi" />
+        <input v-model="printer" type="text" placeholder="Nom yoki uning bir qismi" title="Reyestrdagi nom ham, drayver nomi ham qidiriladi" />
       </label>
       <label class="field">
         <span>Holat</span>
@@ -137,9 +137,19 @@ function clearFilters() {
               </td>
               <td class="nowrap">{{ job.computer }}</td>
               <td class="doc-cell" :title="job.document">{{ job.document }}</td>
+              <!--
+                Printer nomi reyestrdan (MAC bo'yicha) olinadi: bitta jismoniy printer
+                har bir kompyuterda boshqacha drayver nomi bilan ko'ringan bo'lsa ham,
+                jurnalda hamma joyda admin belgilagan yagona nom chiqadi. Xom drayver
+                nomi faqat u farq qilganda, ikkinchi qatorda ko'rsatiladi.
+              -->
               <td>
-                <div :title="job.jobId ? `Ish ID: ${job.jobId}` : undefined">{{ job.printer }}</div>
+                <div class="strong">{{ job.printerName ?? job.printer }}</div>
                 <div class="muted">
+                  <span v-if="job.printerName && job.printerName !== job.printer" :title="`Ushbu kompyuterdagi drayver nomi: ${job.printer}`">
+                    {{ job.printer }}
+                  </span>
+                  <span v-if="job.printerName && job.printerName !== job.printer && (job.printerIp || job.printerMac)"> · </span>
                   <span v-if="job.printerIp">{{ job.printerIp }}</span>
                   <span v-if="job.printerIp && job.printerMac"> · </span>
                   <span v-if="job.printerMac">{{ job.printerMac }}</span>

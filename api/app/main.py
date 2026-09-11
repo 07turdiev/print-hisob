@@ -208,6 +208,20 @@ def _printer_usage_subquery(*filters):
     )
 
 
+def _print_job_printer_name_expr():
+    """Bitta chop etish hodisasi uchun ko'rsatiladigan printer nomi.
+
+    Tartib: admin reyestrda belgilagan nom -> reyestrdagi so'nggi drayver nomi ->
+    hodisadagi xom nom. Shu tufayli bitta jismoniy printer (bir xil MAC) barcha
+    kompyuterlarda **bir xil** nom bilan ko'rinadi, garchi har bir kompyuterda
+    drayver uni boshqacha atagan bo'lsa ham.
+
+    MAC'i yo'q hodisalarda (USB, ulashilgan navbat, boshqa L2 segment) reyestrda
+    qator bo'lmaydi va xom nom ishlatiladi.
+    """
+    return func.coalesce(Printer.name, Printer.last_driver_name, PrintJob.printer)
+
+
 def _printer_display_name_expr(usage_subquery):
     """Ko'rsatish uchun tayyor nom: reyestr qulay nomi -> reyestr so'nggi drayver
     nomi -> hodisadagi xom printer nomi -> mac (identifikator o'zi)."""
@@ -388,20 +402,47 @@ async def list_print_jobs(
     session: AsyncSession = Depends(get_session),
     computer: str | None = Query(default=None, description="Ish stantsiyasi nomi"),
     user: str | None = Query(default=None, description="Foydalanuvchi login'i"),
-    printer: str | None = Query(default=None, description="Printer nomi"),
+    printer: str | None = Query(
+        default=None,
+        description=(
+            "Printer nomi bo'yicha qidiruv (qisman moslik). Reyestrdagi qulay nom ham, "
+            "hodisadagi xom drayver nomi ham tekshiriladi."
+        ),
+    ),
+    printer_mac: str | None = Query(
+        default=None, description="Aniq qurilma (MAC manzili) bo'yicha filtr"
+    ),
     success: bool | None = Query(default=None, description="Faqat muvaffaqiyatli/xato"),
     since: datetime | None = Query(default=None, description="Shu vaqtdan boshlab (ISO-8601)"),
     until: datetime | None = Query(default=None, description="Shu vaqtgacha, chegara kirmaydi"),
     limit: int = Query(default=100, ge=1, le=1000),
     offset: int = Query(default=0, ge=0),
-) -> list[PrintJob]:
+) -> list[PrintJobOut]:
+    """Jurnal uchun chop etish hodisalari.
+
+    Printer nomi **reyestrdan** (MAC bo'yicha) olinadi: bitta jismoniy printer turli
+    kompyuterlarda turlicha drayver nomi bilan ko'ringan bo'lsa ham, jurnalda hamma
+    joyda admin belgilagan yagona nom chiqadi (`printerName`). Xom nom `printer`
+    maydonida saqlanib qoladi — diagnostika uchun.
+    """
     filters = []
     if computer:
         filters.append(PrintJob.computer == computer)
     if user:
         filters.append(PrintJob.user_name == user)
     if printer:
-        filters.append(PrintJob.printer == printer)
+        # Qidiruv reyestrdagi qulay nomga ham tushishi kerak — foydalanuvchi jadvalda
+        # ko'rgan nomni yozadi, xom drayver nomini emas.
+        like = f"%{printer}%"
+        filters.append(
+            or_(
+                PrintJob.printer.ilike(like),
+                Printer.name.ilike(like),
+                Printer.last_driver_name.ilike(like),
+            )
+        )
+    if printer_mac:
+        filters.append(PrintJob.printer_mac == printer_mac)
     if success is not None:
         filters.append(PrintJob.success.is_(success))
     if since:
@@ -409,18 +450,28 @@ async def list_print_jobs(
     if until:
         filters.append(PrintJob.printed_at < until)
 
+    # Reyestrga bog'lash — MAC'i bo'lmagan hodisalar ham qolishi uchun outer join.
+    def _with_registry(stmt):
+        return stmt.select_from(PrintJob).outerjoin(Printer, Printer.mac == PrintJob.printer_mac)
+
     # Sahifalash uchun umumiy son — bir xil filtrlar bilan, `limit`/`offset`siz.
-    count_stmt = select(func.count()).select_from(PrintJob)
+    count_stmt = _with_registry(select(func.count()))
     if filters:
         count_stmt = count_stmt.where(*filters)
     total = (await session.execute(count_stmt)).scalar() or 0
     response.headers["X-Total-Count"] = str(total)
 
-    stmt = select(PrintJob).order_by(PrintJob.printed_at.desc()).limit(limit).offset(offset)
+    stmt = _with_registry(select(PrintJob, _print_job_printer_name_expr()))
     if filters:
         stmt = stmt.where(*filters)
+    stmt = stmt.order_by(PrintJob.printed_at.desc()).limit(limit).offset(offset)
 
-    return list((await session.scalars(stmt)).all())
+    results: list[PrintJobOut] = []
+    for job, printer_name in (await session.execute(stmt)).all():
+        out = PrintJobOut.model_validate(job)
+        out.printer_name = printer_name or job.printer
+        results.append(out)
+    return results
 
 
 # ---------------------------------------------------------------------------

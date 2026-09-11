@@ -266,6 +266,7 @@ export async function getPrintJobs(query: PrintJobQuery = {}): Promise<PrintJobP
       computer: query.computer,
       user: query.user,
       printer: query.printer,
+      printer_mac: query.printerMac,
       success: query.success,
       since: query.since,
       until: query.until,

@@ -166,8 +166,12 @@ export interface PrintJob {
   computer: string
   user: string
   document: string
+  /** Raw driver name as reported by that workstation — differs per PC for the same device. */
   printer: string
-  printerIp: string
+  /** Ready-to-show name resolved from the MAC-keyed registry:
+   *  admin name -> last driver name -> raw name. Use this for display, not `printer`. */
+  printerName: string | null
+  printerIp: string | null
   /** Sheet count for this job (accounts for duplex; field name kept as `pages` for API stability). */
   pages: number
   /** Document page count (fayldagi sahifa soni) — informational only, does not affect `pages`/consumption. */
@@ -186,7 +190,10 @@ export interface PrintJob {
 export interface PrintJobQuery {
   computer?: string
   user?: string
+  /** Partial match against both the registry name and the raw driver name. */
   printer?: string
+  /** Exact device filter by MAC address. */
+  printerMac?: string
   success?: boolean
   since?: string
   until?: string

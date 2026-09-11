@@ -178,7 +178,13 @@ class PrintJobOut(BaseModel):
     computer: str
     user_name: str = Field(serialization_alias="user")
     document: str
+    # Hodisada kelgan xom drayver nomi — har bir kompyuterda har xil bo'lishi mumkin
+    # ("Canon Katta", "Canon svetnoy", ...). Diagnostika uchun saqlanadi.
     printer: str
+    # Ko'rsatish uchun tayyor nom: MAC bo'yicha reyestrdagi admin belgilagan nom ->
+    # reyestrdagi so'nggi drayver nomi -> xom nom. Shu tufayli bitta jismoniy printer
+    # barcha kompyuterlarda BIR XIL nom bilan ko'rinadi.
+    printer_name: str | None = Field(default=None, serialization_alias="printerName")
     printer_ip: str | None = Field(serialization_alias="printerIp")
     pages: int
     document_pages: int = Field(default=0, serialization_alias="documentPages")
