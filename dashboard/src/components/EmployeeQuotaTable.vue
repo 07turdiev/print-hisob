@@ -22,9 +22,23 @@ const MONTH_NAMES = [
 ]
 
 const props = withDefaults(
-  defineProps<{ employees: EmployeeStat[]; title?: string; busyLogin?: string | null }>(),
-  { title: "Xodimlar bo'yicha kvota", busyLogin: null },
+  defineProps<{
+    employees: EmployeeStat[]
+    title?: string
+    busyLogin?: string | null
+    /**
+     * Jadval ikki vazifada ishlatiladi va ustunlari shunga qarab farq qiladi:
+     *
+     * - `management` (Xodimlar va kvotalar) — kvota belgilash, bloklash, biriktirish.
+     *   Sarf raqamlari ko'rsatilmaydi: bu sahifa boshqaruv uchun, hisobot uchun emas.
+     * - `report` (Choraklik/Oylik) — faqat raqamlar, amal tugmalarisiz.
+     */
+    variant?: 'management' | 'report'
+  }>(),
+  { title: "Xodimlar bo'yicha kvota", busyLogin: null, variant: 'report' },
 )
+
+const isManagement = computed(() => props.variant === 'management')
 const emit = defineEmits<{
   save: [login: string, allocatedPages: number]
   'toggle-block': [employee: EmployeeStat]
@@ -55,8 +69,9 @@ type SortKey =
   | 'remaining'
   | 'percent'
 
-const sortKey = ref<SortKey>('total')
-const sortDesc = ref(true)
+// Boshqaruv ko'rinishida sarf ustunlari yo'q, shuning uchun standart saralash ism bo'yicha.
+const sortKey = ref<SortKey>(props.variant === 'management' ? 'name' : 'total')
+const sortDesc = ref(props.variant !== 'management')
 
 function percentOf(emp: EmployeeStat): number {
   if (emp.allocated > 0) return (emp.usedTotal / emp.allocated) * 100
@@ -115,7 +130,11 @@ const totals = computed(() => ({
   allocated: props.employees.reduce((sum, e) => sum + e.allocated, 0),
   overLimit: props.employees.filter((e) => e.overLimit).length,
   blocked: props.employees.filter((e) => e.blocked).length,
+  linked: props.employees.filter((e) => e.chargedTo).length,
 }))
+
+/** Bo'sh jadval xabari uchun ustunlar soni. */
+const columnCount = computed(() => (isManagement.value ? 6 : 10))
 
 const editingLogin = ref<string | null>(null)
 const editValue = ref(0)
@@ -160,29 +179,30 @@ function confirmEdit(login: string) {
               Bo'lim <span class="sort-caret">{{ sortCaret('department') }}</span>
             </th>
             <th>Holat</th>
-            <th class="sortable num" title="Xodimning o'z sarfi" @click="setSort('used')">
+            <th v-if="!isManagement" class="sortable num" title="Xodimning o'z sarfi" @click="setSort('used')">
               O'zi <span class="sort-caret">{{ sortCaret('used') }}</span>
             </th>
             <th
+              v-if="!isManagement"
               class="sortable num"
               title="Unga biriktirilgan xodimlardan qo'shilgan varaqlar"
               @click="setSort('linked')"
             >
               Biriktirilgandan <span class="sort-caret">{{ sortCaret('linked') }}</span>
             </th>
-            <th class="sortable num" title="O'zi + biriktirilgandan" @click="setSort('total')">
+            <th v-if="!isManagement" class="sortable num" title="O'zi + biriktirilgandan" @click="setSort('total')">
               Jami <span class="sort-caret">{{ sortCaret('total') }}</span>
             </th>
             <th class="sortable num" @click="setSort('allocated')">
               {{ quotaColumnLabel }} <span class="sort-caret">{{ sortCaret('allocated') }}</span>
             </th>
-            <th class="sortable num" @click="setSort('remaining')">
+            <th v-if="!isManagement" class="sortable num" @click="setSort('remaining')">
               Qoldiq <span class="sort-caret">{{ sortCaret('remaining') }}</span>
             </th>
-            <th class="sortable col-usage" @click="setSort('percent')">
+            <th v-if="!isManagement" class="sortable col-usage" @click="setSort('percent')">
               Bajarilishi <span class="sort-caret">{{ sortCaret('percent') }}</span>
             </th>
-            <th class="col-actions">Amallar</th>
+            <th v-if="isManagement" class="col-actions">Amallar</th>
           </tr>
         </thead>
 
@@ -190,7 +210,7 @@ function confirmEdit(login: string) {
           <tr
             v-for="(emp, i) in sortedEmployees"
             :key="emp.login"
-            :class="{ 'row-danger': emp.blocked, 'row-warning': !emp.blocked && emp.overLimit }"
+            :class="{ 'row-danger': emp.blocked, 'row-warning': !isManagement && !emp.blocked && emp.overLimit }"
           >
             <td class="col-num">{{ i + 1 }}</td>
 
@@ -215,16 +235,16 @@ function confirmEdit(login: string) {
               </div>
             </td>
 
-            <td class="num">{{ fmt(emp.used) }}</td>
+            <td v-if="!isManagement" class="num">{{ fmt(emp.used) }}</td>
 
-            <td class="num">
+            <td v-if="!isManagement" class="num">
               <span v-if="emp.usedFromLinked > 0" class="linked-value" title="Biriktirilgan xodimlardan">
                 +{{ fmt(emp.usedFromLinked) }}
               </span>
               <span v-else class="muted">—</span>
             </td>
 
-            <td class="num strong">{{ fmt(emp.usedTotal) }}</td>
+            <td v-if="!isManagement" class="num strong">{{ fmt(emp.usedTotal) }}</td>
 
             <!-- Kvota — joyida tahrirlanadi -->
             <td class="num">
@@ -251,13 +271,15 @@ function confirmEdit(login: string) {
               </button>
             </td>
 
-            <td class="num" :class="{ negative: emp.remaining < 0 }">{{ fmt(emp.remaining) }}</td>
+            <td v-if="!isManagement" class="num" :class="{ negative: emp.remaining < 0 }">
+              {{ fmt(emp.remaining) }}
+            </td>
 
-            <td class="col-usage">
+            <td v-if="!isManagement" class="col-usage">
               <UsageBar :used="emp.usedTotal" :allocated="emp.allocated" :over-limit="emp.overLimit" />
             </td>
 
-            <td class="col-actions">
+            <td v-if="isManagement" class="col-actions">
               <div class="actions">
                 <button
                   type="button"
@@ -295,27 +317,42 @@ function confirmEdit(login: string) {
           </tr>
 
           <tr v-if="!sortedEmployees.length">
-            <td colspan="11" class="empty">Ushbu davr uchun ma'lumot topilmadi</td>
+            <td :colspan="columnCount" class="empty">Ushbu davr uchun ma'lumot topilmadi</td>
           </tr>
         </tbody>
       </table>
     </div>
 
     <footer v-if="employees.length" class="panel__foot">
-      <span>
+      <!-- Boshqaruv ko'rinishida sarf raqamlari yo'q, shuning uchun jamlanma ham boshqacha -->
+      <span v-if="isManagement">
+        Jami kvota: <strong class="foot-value">{{ fmt(totals.allocated) }}</strong> varaq
+      </span>
+      <span v-else>
         Jami sarflangan: <strong class="foot-value">{{ fmt(totals.used) }}</strong> varaq &nbsp;·&nbsp;
         Jami kvota: <strong class="foot-value">{{ fmt(totals.allocated) }}</strong> varaq
       </span>
+
       <span class="foot-badges">
         <span v-if="totals.blocked" class="badge badge--danger">
           Bloklangan: {{ totals.blocked }} ta
         </span>
-        <span v-if="totals.overLimit" class="badge badge--warning">
-          Normadan oshgan: {{ totals.overLimit }} ta
-        </span>
-        <span v-if="!totals.blocked && !totals.overLimit" class="badge badge--success">
-          Normadan oshgan xodim yo'q
-        </span>
+        <template v-if="isManagement">
+          <span v-if="totals.linked" class="badge badge--accent">
+            Biriktirilgan: {{ totals.linked }} ta
+          </span>
+          <span v-if="!totals.blocked && !totals.linked" class="badge badge--muted badge--plain">
+            Bloklangan yoki biriktirilgan xodim yo'q
+          </span>
+        </template>
+        <template v-else>
+          <span v-if="totals.overLimit" class="badge badge--warning">
+            Normadan oshgan: {{ totals.overLimit }} ta
+          </span>
+          <span v-if="!totals.blocked && !totals.overLimit" class="badge badge--success">
+            Normadan oshgan xodim yo'q
+          </span>
+        </template>
       </span>
     </footer>
   </section>

@@ -3,7 +3,6 @@ import { onMounted, watch } from 'vue'
 import type { PeriodType } from '../api/types'
 import { usePeriodStore } from '../stores/period'
 import { useDashboardData } from '../composables/useDashboardData'
-import { useOverrideActions } from '../composables/useOverrideActions'
 import AppIcon from '../components/AppIcon.vue'
 import DepartmentFilter from '../components/DepartmentFilter.vue'
 import KpiCards from '../components/KpiCards.vue'
@@ -13,7 +12,6 @@ import TimeseriesChart from '../components/TimeseriesChart.vue'
 import TopList from '../components/TopList.vue'
 import FailuresPanel from '../components/FailuresPanel.vue'
 import UnmatchedUsersCard from '../components/UnmatchedUsersCard.vue'
-import LinkEmployeeDialog from '../components/LinkEmployeeDialog.vue'
 
 const props = defineProps<{ periodType: PeriodType }>()
 
@@ -32,11 +30,7 @@ const {
   error,
   departmentOptions,
   saveQuota,
-  saveOverride,
 } = useDashboardData()
-
-const { busyLogin, linkTarget, actionError, toggleBlock, startLink, cancelLink, confirmLink, unlink } =
-  useOverrideActions(saveOverride)
 
 function handleQuotaSave(login: string, allocatedPages: number) {
   saveQuota(login, allocatedPages).catch(() => {
@@ -59,19 +53,7 @@ function handleQuotaSave(login: string, allocatedPages: number) {
 
     <KpiCards :summary="summary" />
 
-    <p v-if="actionError" class="alert alert--danger">
-      <span class="alert__icon"><AppIcon name="warning" :size="16" /></span>
-      <span>{{ actionError }}</span>
-    </p>
-
-    <EmployeeQuotaTable
-      :employees="employees"
-      :busy-login="busyLogin"
-      @save="handleQuotaSave"
-      @toggle-block="toggleBlock"
-      @link="startLink"
-      @unlink="unlink"
-    >
+    <EmployeeQuotaTable :employees="employees" @save="handleQuotaSave">
       <template #actions>
         <CsvDownloadButton
           :period-type="periodStore.periodType"
@@ -93,15 +75,6 @@ function handleQuotaSave(login: string, allocatedPages: number) {
     </div>
 
     <FailuresPanel :failures="failures" />
-
-    <LinkEmployeeDialog
-      :employee="linkTarget"
-      :options="employees"
-      :saving="busyLogin !== null"
-      :error="actionError"
-      @select="confirmLink"
-      @close="cancelLink"
-    />
 
     <p v-if="loading" class="loading-pill">Yuklanmoqda...</p>
   </div>

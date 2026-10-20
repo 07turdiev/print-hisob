@@ -81,6 +81,7 @@ function handleSave(login: string, allocatedPages: number) {
     <EmployeeQuotaTable
       :employees="rows"
       title="Xodimlar va kvotalar ro'yxati"
+      variant="management"
       :busy-login="busyLogin"
       @save="handleSave"
       @toggle-block="toggleBlock"
