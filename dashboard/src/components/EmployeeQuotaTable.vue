@@ -21,17 +21,22 @@ const MONTH_NAMES = [
   'Dekabr',
 ]
 
-const props = withDefaults(defineProps<{ employees: EmployeeStat[]; title?: string }>(), {
-  title: "Xodimlar bo'yicha kvota",
-})
-const emit = defineEmits<{ save: [login: string, allocatedPages: number] }>()
+const props = withDefaults(
+  defineProps<{ employees: EmployeeStat[]; title?: string; busyLogin?: string | null }>(),
+  { title: "Xodimlar bo'yicha kvota", busyLogin: null },
+)
+const emit = defineEmits<{
+  save: [login: string, allocatedPages: number]
+  'toggle-block': [employee: EmployeeStat]
+  link: [employee: EmployeeStat]
+  unlink: [employee: EmployeeStat]
+}>()
 
 const periodStore = usePeriodStore()
 const numberFormat = new Intl.NumberFormat('uz-UZ')
 const fmt = (n: number) => numberFormat.format(n)
 
-/** Masalan "3-chorak" yoki "Iyul" — backend'dagi period_label bilan bir xil.
- *  Kvota har davr uchun alohida saqlangani uchun ustun sarlavhasida davr yoziladi. */
+/** Masalan "3-chorak" yoki "Iyul" — kvota har davr uchun alohida saqlanadi. */
 const periodLabel = computed(() =>
   periodStore.periodType === 'quarter'
     ? `${periodStore.periodNo}-chorak`
@@ -40,13 +45,22 @@ const periodLabel = computed(() =>
 
 const quotaColumnLabel = computed(() => `Kvota (${periodLabel.value})`)
 
-type SortKey = 'name' | 'position' | 'department' | 'used' | 'allocated' | 'remaining' | 'percent'
+type SortKey =
+  | 'name'
+  | 'department'
+  | 'used'
+  | 'linked'
+  | 'total'
+  | 'allocated'
+  | 'remaining'
+  | 'percent'
 
-const sortKey = ref<SortKey>('used')
+const sortKey = ref<SortKey>('total')
 const sortDesc = ref(true)
 
 function percentOf(emp: EmployeeStat): number {
-  return emp.allocated > 0 ? (emp.used / emp.allocated) * 100 : emp.used > 0 ? Infinity : 0
+  if (emp.allocated > 0) return (emp.usedTotal / emp.allocated) * 100
+  return emp.usedTotal > 0 ? Infinity : 0
 }
 
 function setSort(key: SortKey) {
@@ -70,35 +84,41 @@ const sortedEmployees = computed(() => {
     switch (sortKey.value) {
       case 'name':
         return dir * (a.fullName ?? a.login).localeCompare(b.fullName ?? b.login)
-      case 'position':
-        return dir * (a.position ?? '').localeCompare(b.position ?? '')
       case 'department':
         return dir * (a.department ?? '').localeCompare(b.department ?? '')
       case 'used':
         return dir * (a.used - b.used)
+      case 'linked':
+        return dir * (a.usedFromLinked - b.usedFromLinked)
       case 'allocated':
         return dir * (a.allocated - b.allocated)
       case 'remaining':
         return dir * (a.remaining - b.remaining)
       case 'percent':
         return dir * (percentOf(a) - percentOf(b))
+      case 'total':
       default:
-        return 0
+        return dir * (a.usedTotal - b.usedTotal)
     }
   })
   return list
 })
 
-/** Jadval ostidagi jamlanma — hisobotni tekshirishda qulay. */
+/** Jadval ostidagi jamlanma.
+ *
+ *  "Jami sarflangan" — har kimning **o'z** sarfi yig'indisi. `usedTotal` ni
+ *  qo'shib bo'lmaydi: biriktirilgan varaqlar ikki qatorda (o'zinikida va
+ *  egasining "biriktirilgandan" ustunida) ko'ringani uchun qo'sh hisob chiqadi.
+ */
 const totals = computed(() => ({
   used: props.employees.reduce((sum, e) => sum + e.used, 0),
   allocated: props.employees.reduce((sum, e) => sum + e.allocated, 0),
   overLimit: props.employees.filter((e) => e.overLimit).length,
+  blocked: props.employees.filter((e) => e.blocked).length,
 }))
 
 const editingLogin = ref<string | null>(null)
 const editValue = ref(0)
-const saving = ref(false)
 
 function startEdit(emp: EmployeeStat) {
   editingLogin.value = emp.login
@@ -110,13 +130,8 @@ function cancelEdit() {
 }
 
 function confirmEdit(login: string) {
-  saving.value = true
-  try {
-    emit('save', login, editValue.value)
-  } finally {
-    saving.value = false
-    editingLogin.value = null
-  }
+  emit('save', login, editValue.value)
+  editingLogin.value = null
 }
 </script>
 
@@ -141,15 +156,22 @@ function confirmEdit(login: string) {
             <th class="sortable" @click="setSort('name')">
               F.I.SH. <span class="sort-caret">{{ sortCaret('name') }}</span>
             </th>
-            <th class="sortable" @click="setSort('position')">
-              Lavozimi <span class="sort-caret">{{ sortCaret('position') }}</span>
-            </th>
             <th class="sortable" @click="setSort('department')">
               Bo'lim <span class="sort-caret">{{ sortCaret('department') }}</span>
             </th>
             <th>Holat</th>
-            <th class="sortable num" @click="setSort('used')">
-              Sarflangan <span class="sort-caret">{{ sortCaret('used') }}</span>
+            <th class="sortable num" title="Xodimning o'z sarfi" @click="setSort('used')">
+              O'zi <span class="sort-caret">{{ sortCaret('used') }}</span>
+            </th>
+            <th
+              class="sortable num"
+              title="Unga biriktirilgan xodimlardan qo'shilgan varaqlar"
+              @click="setSort('linked')"
+            >
+              Biriktirilgandan <span class="sort-caret">{{ sortCaret('linked') }}</span>
+            </th>
+            <th class="sortable num" title="O'zi + biriktirilgandan" @click="setSort('total')">
+              Jami <span class="sort-caret">{{ sortCaret('total') }}</span>
             </th>
             <th class="sortable num" @click="setSort('allocated')">
               {{ quotaColumnLabel }} <span class="sort-caret">{{ sortCaret('allocated') }}</span>
@@ -160,23 +182,49 @@ function confirmEdit(login: string) {
             <th class="sortable col-usage" @click="setSort('percent')">
               Bajarilishi <span class="sort-caret">{{ sortCaret('percent') }}</span>
             </th>
+            <th class="col-actions">Amallar</th>
           </tr>
         </thead>
 
         <tbody>
-          <tr v-for="(emp, i) in sortedEmployees" :key="emp.login" :class="{ 'row-danger': emp.overLimit }">
+          <tr
+            v-for="(emp, i) in sortedEmployees"
+            :key="emp.login"
+            :class="{ 'row-danger': emp.blocked, 'row-warning': !emp.blocked && emp.overLimit }"
+          >
             <td class="col-num">{{ i + 1 }}</td>
 
             <td>
               <div class="strong">{{ emp.fullName ?? emp.login }}</div>
-              <div class="muted">{{ emp.login }}</div>
+              <div class="muted">{{ emp.login }}<template v-if="emp.position"> · {{ emp.position }}</template></div>
+              <!-- Biriktirilgan xodim: varaqlari kimning hisobida ko'rinishi -->
+              <div v-if="emp.chargedTo" class="linked-note">
+                <AppIcon name="link" :size="11" />
+                {{ emp.chargedTo }} hisobiga qo'shiladi
+              </div>
             </td>
 
-            <td>{{ emp.position ?? '—' }}</td>
             <td>{{ emp.department ?? '—' }}</td>
-            <td><StatusBadge :status="emp.matchStatus" /></td>
 
-            <td class="num strong">{{ fmt(emp.used) }}</td>
+            <td>
+              <div class="status-cell">
+                <StatusBadge :status="emp.matchStatus" />
+                <span v-if="emp.blocked" class="badge badge--danger" title="Chop etish to'silgan">
+                  Bloklangan
+                </span>
+              </div>
+            </td>
+
+            <td class="num">{{ fmt(emp.used) }}</td>
+
+            <td class="num">
+              <span v-if="emp.usedFromLinked > 0" class="linked-value" title="Biriktirilgan xodimlardan">
+                +{{ fmt(emp.usedFromLinked) }}
+              </span>
+              <span v-else class="muted">—</span>
+            </td>
+
+            <td class="num strong">{{ fmt(emp.usedTotal) }}</td>
 
             <!-- Kvota — joyida tahrirlanadi -->
             <td class="num">
@@ -189,13 +237,7 @@ function confirmEdit(login: string) {
                   @keyup.enter="confirmEdit(emp.login)"
                   @keyup.escape="cancelEdit"
                 />
-                <button
-                  type="button"
-                  class="icon-btn icon-btn--ok"
-                  title="Saqlash"
-                  :disabled="saving"
-                  @click="confirmEdit(emp.login)"
-                >
+                <button type="button" class="icon-btn icon-btn--ok" title="Saqlash" @click="confirmEdit(emp.login)">
                   <AppIcon name="check" :size="15" />
                 </button>
                 <button type="button" class="icon-btn" title="Bekor qilish" @click="cancelEdit">
@@ -212,12 +254,48 @@ function confirmEdit(login: string) {
             <td class="num" :class="{ negative: emp.remaining < 0 }">{{ fmt(emp.remaining) }}</td>
 
             <td class="col-usage">
-              <UsageBar :used="emp.used" :allocated="emp.allocated" :over-limit="emp.overLimit" />
+              <UsageBar :used="emp.usedTotal" :allocated="emp.allocated" :over-limit="emp.overLimit" />
+            </td>
+
+            <td class="col-actions">
+              <div class="actions">
+                <button
+                  type="button"
+                  class="icon-btn"
+                  :class="emp.blocked ? 'icon-btn--ok' : 'icon-btn--danger'"
+                  :disabled="busyLogin === emp.login"
+                  :title="emp.blocked ? 'Blokdan chiqarish' : 'Chop etishni bloklash'"
+                  @click="emit('toggle-block', emp)"
+                >
+                  <AppIcon :name="emp.blocked ? 'unlock' : 'lock'" :size="15" />
+                </button>
+
+                <button
+                  v-if="emp.chargedTo"
+                  type="button"
+                  class="icon-btn"
+                  :disabled="busyLogin === emp.login"
+                  :title="`Biriktirishni bekor qilish (${emp.chargedTo})`"
+                  @click="emit('unlink', emp)"
+                >
+                  <AppIcon name="unlink" :size="15" />
+                </button>
+                <button
+                  v-else
+                  type="button"
+                  class="icon-btn"
+                  :disabled="busyLogin === emp.login"
+                  title="Boshqa xodimga biriktirish"
+                  @click="emit('link', emp)"
+                >
+                  <AppIcon name="link" :size="15" />
+                </button>
+              </div>
             </td>
           </tr>
 
           <tr v-if="!sortedEmployees.length">
-            <td colspan="9" class="empty">Ushbu davr uchun ma'lumot topilmadi</td>
+            <td colspan="11" class="empty">Ushbu davr uchun ma'lumot topilmadi</td>
           </tr>
         </tbody>
       </table>
@@ -228,17 +306,59 @@ function confirmEdit(login: string) {
         Jami sarflangan: <strong class="foot-value">{{ fmt(totals.used) }}</strong> varaq &nbsp;·&nbsp;
         Jami kvota: <strong class="foot-value">{{ fmt(totals.allocated) }}</strong> varaq
       </span>
-      <span v-if="totals.overLimit" class="badge badge--danger">
-        Limitdan oshgan: {{ totals.overLimit }} ta xodim
+      <span class="foot-badges">
+        <span v-if="totals.blocked" class="badge badge--danger">
+          Bloklangan: {{ totals.blocked }} ta
+        </span>
+        <span v-if="totals.overLimit" class="badge badge--warning">
+          Normadan oshgan: {{ totals.overLimit }} ta
+        </span>
+        <span v-if="!totals.blocked && !totals.overLimit" class="badge badge--success">
+          Normadan oshgan xodim yo'q
+        </span>
       </span>
-      <span v-else class="badge badge--success">Limitdan oshgan xodim yo'q</span>
     </footer>
   </section>
 </template>
 
 <style scoped>
 .col-usage {
-  width: 11rem;
+  width: 10rem;
+}
+
+.col-actions {
+  width: 5.5rem;
+  text-align: center;
+}
+
+.status-cell {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+}
+
+/* Biriktirilgan xodim qatoridagi eslatma */
+.linked-note {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 2px;
+  font-size: var(--font-size-xs);
+  color: var(--color-accent);
+}
+
+/* Egasining qatoridagi "+85" ko'rinishidagi qo'shimcha */
+.linked-value {
+  color: var(--color-accent);
+  font-weight: 600;
 }
 
 /* Kvota qiymati — bosilganda tahrirlanadigan tugma ko'rinishida */
@@ -279,14 +399,31 @@ function confirmEdit(login: string) {
 }
 
 .quota-input {
-  width: 5.5rem;
+  width: 5rem;
   height: 26px;
   text-align: right;
 }
 
-.icon-btn--ok:hover {
+.icon-btn--ok:hover:not(:disabled) {
   color: var(--color-success-fg);
   background: var(--color-success-bg);
+}
+
+.icon-btn--danger:hover:not(:disabled) {
+  color: var(--color-danger-fg);
+  background: var(--color-danger-bg);
+}
+
+.icon-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.foot-badges {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
 }
 
 .foot-value {

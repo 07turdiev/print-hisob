@@ -50,6 +50,12 @@ const ICONS: Record<string, string> = {
     '<rect x="7" y="3" width="13" height="16" rx="1.5"/><path d="M16.5 21.5h-11a2 2 0 0 1-2-2V7"/><path d="M10.5 8h6M10.5 11.5h6"/>',
   target: '<circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r="1" fill="currentColor" stroke="none"/>',
   'arrow-right': '<path d="M4.5 12h14"/><path d="M13 6.5 18.5 12 13 17.5"/>',
+  lock: '<rect x="4.5" y="10.5" width="15" height="10" rx="1.8"/><path d="M8 10.5V7a4 4 0 0 1 8 0v3.5"/><circle cx="12" cy="15.5" r="1.1" fill="currentColor" stroke="none"/>',
+  unlock:
+    '<rect x="4.5" y="10.5" width="15" height="10" rx="1.8"/><path d="M8 10.5V7a4 4 0 0 1 7.6-1.7"/><circle cx="12" cy="15.5" r="1.1" fill="currentColor" stroke="none"/>',
+  link: '<path d="M10 13.5a4 4 0 0 0 5.7 0l2.8-2.8a4 4 0 0 0-5.7-5.7l-1.6 1.6"/><path d="M14 10.5a4 4 0 0 0-5.7 0L5.5 13.3a4 4 0 0 0 5.7 5.7l1.6-1.6"/>',
+  unlink:
+    '<path d="M9.5 14a4 4 0 0 0 5.2-.4l1.6-1.6"/><path d="M14.5 10a4 4 0 0 0-5.2.4l-1.6 1.6a4 4 0 0 0 .4 5.2"/><path d="M4 4l16 16"/>',
   building:
     '<path d="M4 21V4.5A1.5 1.5 0 0 1 5.5 3h8A1.5 1.5 0 0 1 15 4.5V21"/><path d="M15 10h3.5A1.5 1.5 0 0 1 20 11.5V21"/><path d="M2.5 21h19"/><path d="M7.5 7h4M7.5 11h4M7.5 15h4"/>',
 }

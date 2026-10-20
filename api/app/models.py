@@ -235,3 +235,52 @@ class AgentStatus(Base):
         Index("ix_agent_status_reported_at", "reported_at"),
         Index("ix_agent_status_working", "working"),
     )
+
+
+class PrintUserOverride(Base):
+    r"""Admin tomonidan qo'lda belgilanadigan sozlamalar: bloklash va biriktirish.
+
+    **Nega alohida jadval, `Employee` ga ustun emas?** Ikki sabab:
+
+    1. `POST /api/ad-sync` har soatda `Employee` qatorini ustiga yozadi — bu yerda
+       saqlansa, admin qo'ygan qiymat sinxronizatsiyada yo'qolardi (`Printer.name`
+       bilan bir xil muammo, u ham shu sababli upsert'da tegilmaydi).
+    2. AD'da umuman yo'q loginlarni ham boshqarish kerak — masalan `scanner_svc`
+       kabi xizmat hisoblari `Employee` jadvalida yo'q, lekin ularni bloklash yoki
+       mas'ul xodimga biriktirish aynan kerak bo'ladi.
+
+    `login` va `charge_to_login` normallashtirilgan holda (kichik harf, `DOMAIN\`
+    prefiksisiz) saqlanadi — `app.logins.normalize_login` ga qarang.
+    """
+
+    __tablename__ = "print_user_overrides"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+
+    login: Mapped[str] = mapped_column(String(255), unique=True)
+
+    # --- Bloklash ---
+    # Agentga `limit: 0` yuboriladi, ya'ni "umuman chop eta olmaydi".
+    blocked: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    blocked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Kim bloklagani (dashboard foydalanuvchisi) — audit uchun.
+    blocked_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    blocked_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # --- Biriktirish ---
+    # Bu xodimning varaqlari qo'shimcha ravishda kimning hisobida ko'rsatilishi.
+    # MUHIM: varaqlar ko'chirilmaydi — har ikkala xodim ham o'z sarfini saqlaydi,
+    # egasining qatorida esa "biriktirilganlardan" ustuni alohida ko'rsatiladi.
+    charge_to_login: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    __table_args__ = (
+        Index("ix_print_user_overrides_charge_to", "charge_to_login"),
+        Index("ix_print_user_overrides_blocked", "blocked"),
+    )

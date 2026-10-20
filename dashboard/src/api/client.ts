@@ -21,17 +21,26 @@ import type {
   StatsSummary,
   TimeseriesPoint,
   TopStats,
+  UserOverride,
+  UserOverrideInput,
 } from './types'
 
 const BASE_URL = (import.meta.env.VITE_API_BASE ?? 'http://localhost:8000').replace(/\/$/, '')
 
 export class ApiError extends Error {
   status: number
+  /**
+   * Serverdan kelgan tushunarli matn (FastAPI `detail`) — foydalanuvchiga aynan
+   * shuni ko'rsatish kerak. `message` esa texnik (metod, yo'l, kod) va u
+   * jurnal/diagnostika uchun.
+   */
+  detail: string | null
 
-  constructor(status: number, message: string) {
+  constructor(status: number, message: string, detail: string | null = null) {
     super(message)
     this.name = 'ApiError'
     this.status = status
+    this.detail = detail
   }
 }
 
@@ -89,13 +98,24 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
 
   if (!response.ok) {
     let detail = response.statusText
+    let serverDetail: string | null = null
     try {
       const data = await response.json()
-      detail = data?.detail ? JSON.stringify(data.detail) : detail
+      if (typeof data?.detail === 'string') {
+        // Oddiy matn — qo'shtirnoqsiz, foydalanuvchiga ko'rsatish mumkin.
+        serverDetail = data.detail
+        detail = data.detail
+      } else if (data?.detail) {
+        detail = JSON.stringify(data.detail)
+      }
     } catch {
       // response body is not JSON, keep statusText
     }
-    throw new ApiError(response.status, `${options.method ?? 'GET'} ${path} -> ${response.status}: ${detail}`)
+    throw new ApiError(
+      response.status,
+      `${options.method ?? 'GET'} ${path} -> ${response.status}: ${detail}`,
+      serverDetail,
+    )
   }
 
   if (response.status === 204) return undefined as T
@@ -289,6 +309,25 @@ export async function getPrintJobs(query: PrintJobQuery = {}): Promise<PrintJobP
   const jobs = (await response.json()) as PrintJobPage['jobs']
   const total = Number(response.headers.get('X-Total-Count') ?? jobs.length)
   return { jobs, total }
+}
+
+// --- Bloklash va biriktirish ----------------------------------------------
+
+/** Admin qo'lda belgilagan qatorlar — tegilmagan xodimlar bu ro'yxatda bo'lmaydi. */
+export function getUserOverrides(): Promise<UserOverride[]> {
+  return request<UserOverride[]>('/api/user-overrides')
+}
+
+/**
+ * Qisman yangilash: faqat berilgan maydonlar o'zgaradi. `chargeToLogin: null`
+ * biriktirishni bekor qiladi, maydonni umuman bermaslik esa uni tegilmagan
+ * holda qoldiradi — shuning uchun ikkisi bir xil emas.
+ */
+export function setUserOverride(login: string, body: UserOverrideInput): Promise<UserOverride> {
+  return request<UserOverride>(`/api/user-overrides/${encodeURIComponent(login)}`, {
+    method: 'PUT',
+    body,
+  })
 }
 
 // --- Print agents (heartbeat monitor) ------------------------------------

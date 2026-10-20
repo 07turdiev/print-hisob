@@ -46,7 +46,9 @@ Dashboard uchun (JWT `Authorization: Bearer`):
 |-------|------|----------|
 | `GET` | `/api/print-jobs` | Yozuvlarni filtrlab qaytaradi |
 | `GET` | `/api/stats/*` | Davr bo'yicha statistika (summary, employees, top, ...) |
-| `GET`/`PUT` | `/api/quotas` | Xodim kvotalarini o'qish/belgilash |
+| `GET`/`PUT` | `/api/quotas` | Xodim kvotalarini o'qish/belgilash (faqat hisobot normasi) |
+| `GET` | `/api/user-overrides` | Bloklangan va biriktirilgan loginlar |
+| `PUT` | `/api/user-overrides/{login}` | Bloklash/blokdan chiqarish, biriktirish/uzish |
 | `GET` | `/health` | Xizmat va baza holati (auth talab qilinmaydi) |
 
 ### POST /api/print-quotas
@@ -68,6 +70,40 @@ curl -X POST http://127.0.0.1:8000/api/print-quotas \
 {"periodKey":"2026-Q3","defaultLimit":1000,
  "users":[{"user":"jane","limit":1500,"used":945}]}
 ```
+
+### Bloklash va biriktirish
+
+**Kvota hech kimni to'smaydi** — u faqat hisobot normasi (dashboardda "normadan
+oshgan" deb ko'rsatiladi). Chop etishni to'sish faqat adminning aniq qarori bilan:
+
+```bash
+# bloklash -> agentga `limit: 0` ketadi
+curl -X PUT .../api/user-overrides/b.soliyev -d '{"blocked":true,"blockedReason":"..."}'
+# blokdan chiqarish
+curl -X PUT .../api/user-overrides/b.soliyev -d '{"blocked":false}'
+```
+
+**Biriktirish** — bir xodimning varaqlarini boshqasining hisobida ham ko'rsatish.
+Varaqlar **ko'chirilmaydi**: har ikkalasi o'z sarfini saqlaydi, egasining
+qatorida esa alohida ustun qo'shiladi.
+
+```bash
+curl -X PUT .../api/user-overrides/b.soliyev -d '{"chargeToLogin":"a.karimov"}'
+curl -X PUT .../api/user-overrides/b.soliyev -d '{"chargeToLogin":null}'   # uzish
+```
+
+`/api/stats/employees` javobida: `used` (o'zi), `usedFromLinked`
+(biriktirilganlardan), `usedTotal` (jami). Kvota `usedTotal` ga nisbatan
+tekshiriladi.
+
+**Zanjir taqiqlangan** (A→B→C): server 400 qaytaradi. Sababi — "kimning
+hisobida" degan savolga yagona javob bo'lishi va A→B→A halqasi hosil
+bo'lmasligi kerak.
+
+Sozlamalar `print_user_overrides` jadvalida, `Employee` da emas: AD
+sinxronizatsiyasi har soatda xodim qatorini ustiga yozadi (`Printer.name` bilan
+bir xil muammo), qolaversa AD'da yo'q loginlarni (`scanner_svc` kabi) ham
+boshqarish kerak.
 
 Uch nozik qoida (agent hujjatidan):
 

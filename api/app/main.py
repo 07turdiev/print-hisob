@@ -8,7 +8,8 @@ from urllib.parse import quote
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Response, Security, status
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy import Integer, case, cast, exists, func, literal, or_, select, update
+from sqlalchemy import Integer, case, cast, exists, func, literal, or_, select, union, update
+from sqlalchemy.orm import aliased
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -22,9 +23,10 @@ from app.auth import (
 )
 from app.config import settings
 from app.db import Base, engine, get_session
-from app.models import AgentStatus, Employee, EmployeeQuota, PrintJob, Printer
+from app.logins import SQL_DOMAIN_PREFIX_PATTERN
+from app.models import AgentStatus, Employee, EmployeeQuota, PrintJob, Printer, PrintUserOverride
 from app.periods import Period, PeriodType, default_quota_for, period_bounds, period_label
-from app.routers import print_quotas
+from app.routers import print_quotas, user_overrides
 from app.schemas import (
     AdSyncStatusOut,
     AgentOut,
@@ -101,6 +103,13 @@ TAGS_METADATA = [
         ),
     },
     {"name": "stats", "description": "Chorak/oy bo'yicha dashboard statistikasi."},
+    {
+        "name": "user-overrides",
+        "description": (
+            "Chop etishni bloklash va xodimni boshqa xodimga biriktirish "
+            "(qo'lda, admin tomonidan)."
+        ),
+    },
     {"name": "agents", "description": "Agent (.exe) sog'lik holati (heartbeat) monitoringi."},
     {"name": "service", "description": "Xizmat va baza holatini tekshirish."},
 ]
@@ -131,6 +140,7 @@ UNAUTHORIZED_RESPONSE = API_KEY_UNAUTHORIZED_RESPONSE
 
 # Alohida modullarga ko'chirilgan endpointlar.
 app.include_router(print_quotas.router)
+app.include_router(user_overrides.router)
 
 
 async def period_params(
@@ -1084,46 +1094,94 @@ async def _employee_stats_rows(
 
     Har bir SQL agregatsiyasi shu yerda bir marta yoziladi — CSV eksport bu
     natijalarni faqat bo'lim bo'yicha guruhlab, boshqacha formatda chiqaradi,
-    lekin raqamlar (used/allocated) har doim bir xil manbadan keladi.
+    lekin raqamlar har doim bir xil manbadan keladi.
+
+    **Biriktirish qanday hisoblanadi.** Varaqlar hech qayerga ko'chirilmaydi:
+    har bir xodim o'z sarfini (`used`) saqlaydi, egasining qatorida esa unga
+    biriktirilganlardan kelgan yig'indi alohida ustun bo'lib qo'shiladi
+    (`used_from_linked`). Kvota `used_total = used + used_from_linked` ga
+    nisbatan tekshiriladi — shunda xodim o'zi qancha chiqarganini ham,
+    unga qancha qo'shilganini ham ko'radi.
+
+    Loginlar normallashtirilgan holda (kichik harf, `DOMAIN\\` prefiksisiz)
+    guruhlanadi — bitta odam ikki xil yozilish bilan ikki qatorga bo'linib
+    ketmasligi uchun (`app.logins.normalize_login` bilan bir xil qoida).
     """
     # Bu davr uchun aniq kvota qatori bo'lmagan xodimlarga standart kvota
     # qo'llanadi (0 emas) — pastda `func.coalesce` shuni ta'minlaydi (faqat
     # qator umuman yo'qligida ishga tushadi, saqlangan 0 qiymatga tegmaydi).
     default_allocated = default_quota_for(period.period_type)
+    period_filter = (PrintJob.printed_at >= period.start, PrintJob.printed_at < period.end)
+    norm_login = func.lower(func.regexp_replace(PrintJob.user_name, SQL_DOMAIN_PREFIX_PATTERN, ""))
 
+    # 1) Davrda har bir xodimning **o'z** sarfi.
     usage = (
         select(
-            PrintJob.user_name.label("login"),
+            norm_login.label("login"),
+            # Ko'rsatish uchun xom yozilishlardan bittasi (odatda hammasi bir xil).
+            func.max(PrintJob.user_name).label("raw_login"),
             func.coalesce(func.sum(PrintJob.pages), 0).label("used"),
         )
-        .where(PrintJob.printed_at >= period.start, PrintJob.printed_at < period.end)
-        .group_by(PrintJob.user_name)
+        .where(*period_filter)
+        .group_by(norm_login)
         .subquery()
     )
 
+    # 2) Har bir "egaga" unga biriktirilgan loginlardan kelgan yig'indi.
+    linked = (
+        select(
+            PrintUserOverride.charge_to_login.label("owner"),
+            func.coalesce(func.sum(PrintJob.pages), 0).label("used"),
+        )
+        .select_from(PrintJob)
+        .join(PrintUserOverride, PrintUserOverride.login == norm_login)
+        .where(*period_filter, PrintUserOverride.charge_to_login.isnot(None))
+        .group_by(PrintUserOverride.charge_to_login)
+        .subquery()
+    )
+
+    # 3) Qatorlar to'plami: chop etganlar **va** biriktirilganlari bor egalar.
+    #    Ikkinchisi kerak, chunki o'zi umuman chop etmagan xodim ham unga
+    #    biriktirilgan varaqlar tufayli hisobotda ko'rinishi kerak.
+    identities = union(
+        select(usage.c.login.label("login")),
+        select(linked.c.owner.label("login")),
+    ).subquery()
+
+    own_override = aliased(PrintUserOverride)
+    used_expr = func.coalesce(usage.c.used, 0)
+    linked_expr = func.coalesce(linked.c.used, 0)
+
     stmt = (
         select(
-            usage.c.login,
+            identities.c.login,
+            func.coalesce(usage.c.raw_login, identities.c.login).label("raw_login"),
             Employee.full_name,
             Employee.department,
             Employee.position,
             Employee.is_active,
-            usage.c.used,
+            used_expr.label("used"),
+            linked_expr.label("used_from_linked"),
             func.coalesce(EmployeeQuota.allocated_pages, default_allocated).label("allocated"),
+            own_override.blocked,
+            own_override.charge_to_login,
         )
-        .select_from(usage)
-        .outerjoin(Employee, Employee.login == usage.c.login)
+        .select_from(identities)
+        .outerjoin(usage, usage.c.login == identities.c.login)
+        .outerjoin(linked, linked.c.owner == identities.c.login)
+        .outerjoin(Employee, func.lower(Employee.login) == identities.c.login)
         .outerjoin(
             EmployeeQuota,
-            (EmployeeQuota.login == usage.c.login)
+            (func.lower(EmployeeQuota.login) == identities.c.login)
             & (EmployeeQuota.period_type == period.period_type)
             & (EmployeeQuota.year == period.year)
             & (EmployeeQuota.period_no == period.period_no),
         )
+        .outerjoin(own_override, own_override.login == identities.c.login)
     )
     if department:
         stmt = stmt.where(Employee.department == department)
-    stmt = stmt.order_by(usage.c.used.desc())
+    stmt = stmt.order_by((used_expr + linked_expr).desc())
 
     rows = (await session.execute(stmt)).all()
 
@@ -1137,18 +1195,24 @@ async def _employee_stats_rows(
             match_status = "inactive"
 
         used = row.used or 0
+        used_from_linked = row.used_from_linked or 0
+        used_total = used + used_from_linked
         allocated = row.allocated or 0
         results.append(
             EmployeeStatOut(
-                login=row.login,
+                login=row.raw_login or row.login,
                 full_name=row.full_name,
                 department=row.department,
                 position=row.position,
                 used=used,
+                used_from_linked=used_from_linked,
+                used_total=used_total,
                 allocated=allocated,
-                remaining=allocated - used,
-                over_limit=used > allocated,
+                remaining=allocated - used_total,
+                over_limit=used_total > allocated,
                 match_status=match_status,
+                charged_to=row.charge_to_login,
+                blocked=bool(row.blocked),
             )
         )
     return results

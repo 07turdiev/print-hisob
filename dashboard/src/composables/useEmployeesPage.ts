@@ -1,8 +1,25 @@
 import { computed, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
-import { ApiError, getEmployeeStats, getEmployees, getQuotas, getSummary, putQuotas } from '../api/client'
-import type { Employee, EmployeeQuota, EmployeeStat, MergedEmployeeRow } from '../api/types'
+import {
+  ApiError,
+  getEmployeeStats,
+  getEmployees,
+  getQuotas,
+  getSummary,
+  getUserOverrides,
+  putQuotas,
+  setUserOverride,
+} from '../api/client'
+import type {
+  Employee,
+  EmployeeQuota,
+  EmployeeStat,
+  MergedEmployeeRow,
+  UserOverride,
+  UserOverrideInput,
+} from '../api/types'
 import { usePeriodStore } from '../stores/period'
+import { normalizeLogin } from '../utils/logins'
 import { useAdSyncStatus } from './useAdSyncStatus'
 
 export type ActiveFilter = '' | 'active' | 'inactive'
@@ -23,6 +40,8 @@ export function useEmployeesPage() {
   const adEmployees = ref<Employee[]>([])
   const stats = ref<EmployeeStat[]>([])
   const quotas = ref<EmployeeQuota[]>([])
+  /** Admin qo'lda belgilagan bloklash/biriktirish holatlari. */
+  const overrides = ref<UserOverride[]>([])
   /** Default quota (pages) for the selected period, used when an employee has neither
    *  a stats row (no prints) nor an explicit quota row — keeps this page in sync with
    *  what the backend applies everywhere else instead of falling back to a hardcoded 0. */
@@ -42,7 +61,7 @@ export function useEmployeesPage() {
     error.value = null
     try {
       const periodParams = { periodType: periodType.value, year: year.value, periodNo: periodNo.value }
-      const [adRes, statsRes, quotasRes, summaryRes] = await Promise.all([
+      const [adRes, statsRes, quotasRes, summaryRes, overridesRes] = await Promise.all([
         getEmployees({
           department: department.value || undefined,
           q: search.value || undefined,
@@ -52,11 +71,13 @@ export function useEmployeesPage() {
         getEmployeeStats(periodParams),
         getQuotas(periodParams),
         getSummary(periodParams),
+        getUserOverrides(),
       ])
       adEmployees.value = adRes
       stats.value = statsRes
       quotas.value = quotasRes
       defaultQuota.value = summaryRes.defaultQuota
+      overrides.value = overridesRes
     } catch (err) {
       error.value = err instanceof ApiError ? err.message : "Ma'lumotlarni yuklab bo'lmadi"
     } finally {
@@ -105,26 +126,39 @@ export function useEmployeesPage() {
   }
 
   const rows = computed<MergedEmployeeRow[]>(() => {
-    const statMap = new Map(stats.value.map((s) => [s.login, s]))
-    const quotaMap = new Map(quotas.value.map((q) => [q.login, q.allocatedPages]))
+    // Barcha xaritalar normallashtirilgan login bo'yicha — chop etish yozuvidagi
+    // yozilish AD'dagidan registr yoki domen prefiksi bilan farq qilishi mumkin.
+    const statMap = new Map(stats.value.map((s) => [normalizeLogin(s.login), s]))
+    const quotaMap = new Map(quotas.value.map((q) => [normalizeLogin(q.login), q.allocatedPages]))
+    const overrideMap = new Map(overrides.value.map((o) => [normalizeLogin(o.login), o]))
     const seen = new Set<string>()
     const result: MergedEmployeeRow[] = []
 
     for (const emp of adEmployees.value) {
-      seen.add(emp.login)
-      const stat = statMap.get(emp.login)
+      const key = normalizeLogin(emp.login)
+      seen.add(key)
+      const stat = statMap.get(key)
+      const override = overrideMap.get(key)
       const used = stat?.used ?? 0
-      const allocated = stat?.allocated ?? quotaMap.get(emp.login) ?? defaultQuota.value
+      const usedFromLinked = stat?.usedFromLinked ?? 0
+      const usedTotal = used + usedFromLinked
+      const allocated = stat?.allocated ?? quotaMap.get(key) ?? defaultQuota.value
       result.push({
         login: emp.login,
         fullName: emp.fullName,
         department: emp.department,
         position: emp.position ?? stat?.position ?? null,
         used,
+        usedFromLinked,
+        usedTotal,
         allocated,
-        remaining: allocated - used,
-        overLimit: stat?.overLimit ?? used > allocated,
+        remaining: allocated - usedTotal,
+        overLimit: stat?.overLimit ?? usedTotal > allocated,
         matchStatus: emp.isActive ? 'active' : 'inactive',
+        // Hech qachon chop etmagan xodim uchun statistika qatori bo'lmasligi
+        // mumkin, shuning uchun bloklash/biriktirish alohida ro'yxatdan olinadi.
+        chargedTo: override?.chargeToLogin ?? stat?.chargedTo ?? null,
+        blocked: override?.blocked ?? stat?.blocked ?? false,
       })
     }
 
@@ -132,18 +166,24 @@ export function useEmployeesPage() {
     // AD'da umuman topilmaganlar (unmatched). Faqat joriy filtrlarga mos
     // kelganlari qo'shiladi.
     for (const stat of stats.value) {
-      if (seen.has(stat.login)) continue
+      const key = normalizeLogin(stat.login)
+      if (seen.has(key)) continue
       if (!statRowPassesFilters(stat)) continue
+      const override = overrideMap.get(key)
       result.push({
         login: stat.login,
         fullName: stat.fullName,
         department: stat.department,
         position: stat.position,
         used: stat.used,
+        usedFromLinked: stat.usedFromLinked,
+        usedTotal: stat.usedTotal,
         allocated: stat.allocated,
         remaining: stat.remaining,
         overLimit: stat.overLimit,
         matchStatus: stat.matchStatus,
+        chargedTo: override?.chargeToLogin ?? stat.chargedTo,
+        blocked: override?.blocked ?? stat.blocked,
       })
     }
 
@@ -155,6 +195,18 @@ export function useEmployeesPage() {
     for (const emp of directoryOptions.value) if (emp.department) set.add(emp.department)
     return Array.from(set).sort()
   })
+
+  /**
+   * Bloklash yoki biriktirishni saqlaydi.
+   *
+   * Saqlangandan keyin butun sahifa qayta yuklanadi: biriktirish sarf
+   * raqamlarini ham o'zgartiradi (egasining "biriktirilganlardan" ustuni),
+   * shuning uchun faqat mahalliy bayroqni yangilash yetarli emas.
+   */
+  async function saveOverride(login: string, body: UserOverrideInput) {
+    await setUserOverride(login, body)
+    await reload()
+  }
 
   async function saveQuota(login: string, allocatedPages: number) {
     const [saved] = await putQuotas({
@@ -186,10 +238,13 @@ export function useEmployeesPage() {
     search,
     activeFilter,
     departmentOptions,
+    /** Biriktirish oynasida tanlash uchun — filtrlanmagan to'liq AD ro'yxati. */
+    directoryOptions,
     defaultQuota,
     adSyncStatus,
     loading,
     error,
     saveQuota,
+    saveOverride,
   }
 }

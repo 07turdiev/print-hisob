@@ -11,6 +11,7 @@ import pytest
 
 from app.config import settings
 from app.logins import normalize_login
+from app.services.quota_sync import BLOCKED, UNLIMITED
 from app.periods import current_period, period_key
 
 BODY = {
@@ -74,11 +75,12 @@ def test_current_period_matches_calendar():
 
 
 def test_sync_returns_period_key_and_default_limit(client):
+    """Kvota hech kimni to'smaydi — ro'yxatda yo'q har kim cheklovsiz (-1)."""
     r = client.post("/api/print-quotas", json=BODY)
     assert r.status_code == 200
     body = r.json()
     assert body["periodKey"] == _expected_key()
-    assert body["defaultLimit"] == settings.default_quota_quarter
+    assert body["defaultLimit"] == UNLIMITED
 
 
 def test_sync_ignores_period_key_sent_by_agent(client):
@@ -94,9 +96,8 @@ def test_sync_echoes_requested_user(client):
     assert r.status_code == 200
     users = r.json()["users"]
     assert [u["user"] for u in users] == ["jane"]
-    # Kvota belgilanmagan (bazada qator yo'q) -> `null`, ya'ni agent `defaultLimit`ga tushadi.
-    # Bu `-1` (aniq cheklovsiz) bilan bir xil emas.
-    assert users[0]["limit"] is None
+    # Bloklanmagan xodim -> aniq cheklovsiz (-1), kvotasidan qat'i nazar.
+    assert users[0]["limit"] == UNLIMITED
     assert users[0]["used"] == 0
 
 
@@ -117,7 +118,7 @@ def test_sync_accepts_empty_user_list(client):
     )
     assert r.status_code == 200
     assert r.json()["users"] == []
-    assert r.json()["defaultLimit"] == settings.default_quota_quarter
+    assert r.json()["defaultLimit"] == UNLIMITED
 
 
 def test_sync_accepts_missing_period_key(client):
@@ -177,3 +178,31 @@ def test_sync_requires_api_key_when_configured(monkeypatch):
             assert ok.status_code == 200
     finally:
         app.dependency_overrides.clear()
+
+
+# ---------------------------------------------------------------------------
+# Blokdan chiqarish agentga qanday yetkaziladi
+# ---------------------------------------------------------------------------
+
+
+def test_unblocked_user_gets_explicit_unlimited(client, monkeypatch):
+    """Blokdan chiqarilgan login javobdan yo'qolmasligi, aniq `-1` olishi kerak.
+
+    Agent javobni keshlaydi va hujjatda keshning qatorma-qator birlashtirilishi
+    yoki butunlay almashtirilishi aniq yozilmagan. Agar bunday login ro'yxatdan
+    shunchaki yo'qolsa, agent eski `limit: 0` ni saqlab qolishi mumkin edi.
+    """
+    from app.services import quota_sync
+
+    async def fake_states(_session):
+        return {"bloklangan": True, "chiqarilgan": False}
+
+    monkeypatch.setattr(quota_sync.user_overrides, "known_login_states", fake_states)
+
+    r = client.post(
+        "/api/print-quotas",
+        json={"computer": "PC1", "timestamp": "2026-10-20T09:00:00Z", "users": []},
+    )
+    assert r.status_code == 200
+    limits = {u["user"]: u["limit"] for u in r.json()["users"]}
+    assert limits == {"bloklangan": BLOCKED, "chiqarilgan": UNLIMITED}

@@ -40,6 +40,9 @@ _TEST_TOKEN = jwt.encode(
 
 # Har bir `execute()`/`scalars()` chaqiruvida qabul qilingan bind-parametrlar shu yerga yoziladi.
 CAPTURED: list[dict] = []
+# Kompilyatsiya qilingan SQL matnlari — masalan ON CONFLICT DO UPDATE qaysi
+# ustunlarga tegayotganini tekshirish uchun.
+CAPTURED_SQL: list[str] = []
 
 _MULTIROW_RE = re.compile(r"_m(\d+)$")
 
@@ -116,9 +119,15 @@ class FakeSession:
         """Xato yuz berganda chaqiriladi; bazasiz muhitda hech nima qilmaydi."""
 
     async def execute(self, stmt) -> _FakeResult:
-        params = stmt.compile(dialect=postgresql.dialect()).params
-        CAPTURED.append(params)
-        return _FakeResult(stmt, params)
+        compiled = stmt.compile(dialect=postgresql.dialect())
+        CAPTURED.append(compiled.params)
+        CAPTURED_SQL.append(str(compiled))
+        return _FakeResult(stmt, compiled.params)
+
+    async def scalar(self, stmt):
+        """`session.scalar(...)` — bazasiz muhitda qator topilmagani kabi `None`."""
+        await self.execute(stmt)
+        return None
 
     async def scalars(self, stmt) -> _FakeResult:
         return await self.execute(stmt)
@@ -136,6 +145,7 @@ def client():
     """
     app.dependency_overrides[get_session] = _fake_session
     CAPTURED.clear()
+    CAPTURED_SQL.clear()
     with TestClient(app) as c:
         c.headers.update({"Authorization": f"Bearer {_TEST_TOKEN}"})
         yield c

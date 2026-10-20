@@ -9,6 +9,7 @@ import {
   getTimeseries,
   getTopStats,
   putQuotas,
+  setUserOverride,
 } from '../api/client'
 import type {
   DepartmentStat,
@@ -17,6 +18,7 @@ import type {
   StatsSummary,
   TimeseriesPoint,
   TopStats,
+  UserOverrideInput,
 } from '../api/types'
 import { usePeriodStore } from '../stores/period'
 
@@ -78,6 +80,12 @@ export function useDashboardData() {
 
   watch([periodType, year, periodNo, department], reload, { immediate: true })
 
+  /** Bloklash yoki biriktirishni saqlaydi va raqamlarni qayta yuklaydi. */
+  async function saveOverride(login: string, body: UserOverrideInput) {
+    await setUserOverride(login, body)
+    await reload()
+  }
+
   /** Saves one employee's quota via PUT /api/quotas and patches the local list in place. */
   async function saveQuota(login: string, allocatedPages: number) {
     const [saved] = await putQuotas({
@@ -120,5 +128,6 @@ export function useDashboardData() {
     departmentOptions,
     reload,
     saveQuota,
+    saveOverride,
   }
 }

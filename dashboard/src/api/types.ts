@@ -31,11 +31,20 @@ export interface EmployeeStat {
   fullName: string | null
   department: string | null
   position: string | null
+  /** Xodimning o'z sarfi — biriktirilganlarniki bu songa kirmaydi. */
   used: number
+  /** Shu xodimga biriktirilgan loginlardan qo'shilgan varaqlar. */
+  usedFromLinked: number
+  /** `used + usedFromLinked` — kvota shu songa nisbatan tekshiriladi. */
+  usedTotal: number
   allocated: number
   remaining: number
   overLimit: boolean
   matchStatus: MatchStatus
+  /** Bu xodimning varaqlari qo'shimcha ravishda kimning hisobida ko'rsatiladi. */
+  chargedTo: string | null
+  /** Admin tomonidan chop etishdan to'silganmi. */
+  blocked: boolean
 }
 
 export interface TimeseriesPoint {
@@ -113,11 +122,20 @@ export interface MergedEmployeeRow {
   fullName: string | null
   department: string | null
   position: string | null
+  /** Xodimning o'z sarfi — biriktirilganlarniki bu songa kirmaydi. */
   used: number
+  /** Shu xodimga biriktirilgan loginlardan qo'shilgan varaqlar. */
+  usedFromLinked: number
+  /** `used + usedFromLinked` — kvota shu songa nisbatan tekshiriladi. */
+  usedTotal: number
   allocated: number
   remaining: number
   overLimit: boolean
   matchStatus: MatchStatus
+  /** Bu xodimning varaqlari qo'shimcha ravishda kimning hisobida ko'rsatiladi. */
+  chargedTo: string | null
+  /** Admin tomonidan chop etishdan to'silganmi. */
+  blocked: boolean
 }
 
 // --- Printers --------------------------------------------------------------
@@ -259,4 +277,25 @@ export interface AdSyncStatus {
   minutesSinceSync: number | null
   /** True when the last sync is older than the server threshold, or there are zero employees. */
   isStale: boolean
+}
+
+// --- Bloklash va biriktirish ----------------------------------------------
+
+/** One row from GET /api/user-overrides — admin-set block/link state. */
+export interface UserOverride {
+  login: string
+  blocked: boolean
+  blockedAt: string | null
+  blockedBy: string | null
+  blockedReason: string | null
+  /** Login this user's pages are additionally shown under; `null` when not linked. */
+  chargeToLogin: string | null
+}
+
+/** Body for PUT /api/user-overrides/{login} — only the sent fields change. */
+export interface UserOverrideInput {
+  blocked?: boolean
+  blockedReason?: string | null
+  /** `null` clears the link; omit the field to leave it untouched. */
+  chargeToLogin?: string | null
 }

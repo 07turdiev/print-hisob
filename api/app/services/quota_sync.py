@@ -6,6 +6,12 @@ agent qabul qiladi** — ish navbatga tushgan va printer qog'ozni tortgan payt
 orasidagi millisekundlarda hal qilish kerak. Shuning uchun bitta POST ikkala
 ishni bajaradi: agent sarfni bildiradi, server javobida limitlarni qaytaradi.
 
+**Kvota endi hech kimni to'smaydi.** U faqat hisobot normasi (dashboardda
+"limitdan oshgan" deb ko'rsatiladi). Chop etishni to'sish faqat adminning aniq
+qarori bilan bo'ladi: `print_user_overrides.blocked` belgilangan loginga
+`limit: 0` yuboriladi, qolgan hammaga `-1` (cheklovsiz). Avval kvotadan oshish
+avtomatik to'sardi va odamlar sababini bilmay qolardi.
+
 Javobdagi uch qiymatning ma'nosi bir xil emas (hujjatdagi "Uch nozik qoida"):
 
 * `limit` umuman yuborilmasa (yoki `null`) — "menda fikr yo'q", agent
@@ -26,12 +32,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.logins import SQL_DOMAIN_PREFIX_PATTERN, normalize_login
-from app.models import AgentQuotaState, EmployeeQuota, PrintJob
-from app.periods import Period, PeriodType, current_period, default_quota_for, period_key
+from app.models import AgentQuotaState, PrintJob
+from app.periods import Period, PeriodType, current_period, period_key
+from app.services import user_overrides
 from app.schemas import QuotaLimitOut, QuotaSyncIn, QuotaSyncOut
 
 # Bitta INSERT'dagi qatorlar soni (Postgres parametr chegarasi uchun).
 CHUNK_SIZE = 500
+
+# Agent hujjatidagi maxsus qiymatlar.
+UNLIMITED = -1  # aniq cheklovsiz (mahalliy chegara ham qo'llanmaydi)
+BLOCKED = 0  # umuman chop eta olmaydi
 
 
 def _normalized_login_expr():
@@ -67,22 +78,6 @@ async def _usage_by_login(session: AsyncSession, period: Period) -> dict[str, in
     )
     rows = (await session.execute(stmt)).all()
     return {row.login: int(row.used or 0) for row in rows}
-
-
-async def _explicit_limits(session: AsyncSession, period: Period) -> dict[str, int]:
-    """Shu davr uchun dashboardda **aniq belgilangan** kvotalar.
-
-    Bu yerda faqat haqiqiy qatorlar bo'ladi — kvotasi belgilanmagan xodimlar
-    javobda `limit=null` bilan ketadi va agent `defaultLimit`ni qo'llaydi.
-    Saqlangan `0` esa so'zma-so'z 0 bo'lib qoladi (standart bilan almashtirilmaydi).
-    """
-    stmt = select(EmployeeQuota.login, EmployeeQuota.allocated_pages).where(
-        EmployeeQuota.period_type == period.period_type,
-        EmployeeQuota.year == period.year,
-        EmployeeQuota.period_no == period.period_no,
-    )
-    rows = (await session.execute(stmt)).all()
-    return {normalize_login(row.login): int(row.allocated_pages) for row in rows}
 
 
 async def _save_state(
@@ -147,27 +142,36 @@ async def _save_state(
 
 
 async def sync_quotas(session: AsyncSession, payload: QuotaSyncIn) -> QuotaSyncOut:
-    """Agent hisobotini qabul qilib, joriy davr limitlarini qaytaradi.
+    """Agent hisobotini qabul qilib, joriy holatni qaytaradi.
 
     Javobga ikki guruh foydalanuvchi kiradi:
 
-    1. agent so'ragan foydalanuvchilar — ular uchun `used` (haqiqiy, flot
-       bo'yicha) va aniq kvota bo'lsa `limit`;
-    2. shu davrga dashboardda **aniq kvota belgilangan** barcha xodimlar — agent
-       ularni oldindan keshlab qo'ysin, shunda o'sha odam birinchi marta shu
-       mashinada chop etganda ham to'g'ri limit qo'llanadi.
+    1. agent so'ragan foydalanuvchilar — ularga `limit: -1` (cheklovsiz) va
+       ma'lumot uchun haqiqiy sarf (`used`);
+    2. **admin tegib o'tgan barcha loginlar** — bloklanganlarga `0`,
+       blokdan chiqarilganlarga ochiq-oydin `-1`.
+
+    Ikkinchi guruhga bloklanmaganlar ham kirishi muhim: agent javobni keshlaydi,
+    shuning uchun "cheklov olindi" degan xabar ro'yxatdan yo'qolish orqali emas,
+    aniq `-1` qiymati orqali yetkaziladi.
+
+    Kvota bu yerda umuman qatnashmaydi: u faqat hisobot normasi. Chop etishni
+    to'sish faqat dashboarddagi "Bloklash" tugmasi orqali bo'ladi.
     """
     period = current_period(agent_period_type())
     key = period_key(period.period_type, period.year, period.period_no)
 
-    usage = await _usage_by_login(session, period)
-    limits = await _explicit_limits(session, period)
+    report_used = settings.agent_quota_report_used
+    usage = await _usage_by_login(session, period) if report_used else {}
+    known = await user_overrides.known_login_states(session)
 
-    # Agent so'raganlar + kvotasi aniq belgilanganlar.
+    # Agent so'raganlar + admin tegib o'tgan barcha loginlar. Ikkinchisi faqat
+    # bloklanganlar emas: blokdan chiqarilganga ham ochiq-oydin `-1` yuborilishi
+    # kerak, aks holda agent eski keshlangan `0` ni saqlab qolishi mumkin.
     requested = {normalize_login(item.user): item.user for item in payload.users}
     requested.pop("", None)
     logins = dict(requested)
-    for login in limits:
+    for login in known:
         logins.setdefault(login, login)
 
     users: list[QuotaLimitOut] = []
@@ -177,8 +181,8 @@ async def sync_quotas(session: AsyncSession, payload: QuotaSyncIn) -> QuotaSyncO
             # Agent nomlarni registrga sezgir bo'lmagan holda solishtiradi, shuning
             # uchun u yuborgan shaklni o'zgartirmasdan qaytaramiz.
             user=display_name,
-            limit=limits.get(login),
-            used=usage.get(login, 0) if settings.agent_quota_report_used else None,
+            limit=BLOCKED if known.get(login) else UNLIMITED,
+            used=usage.get(login, 0) if report_used else None,
         )
         users.append(answer)
         served[login] = answer
@@ -187,6 +191,7 @@ async def sync_quotas(session: AsyncSession, payload: QuotaSyncIn) -> QuotaSyncO
 
     return QuotaSyncOut(
         period_key=key,
-        default_limit=default_quota_for(period.period_type),
+        # Ro'yxatda yo'q har kim cheklovsiz — kvotadan oshish hech kimni to'smaydi.
+        default_limit=UNLIMITED,
         users=users,
     )

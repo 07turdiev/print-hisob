@@ -379,10 +379,14 @@ class EmployeeStatOut(BaseModel):
                     "department": "Buxgalteriya",
                     "position": "Bosh mutaxassis",
                     "used": 1780,
+                    "usedFromLinked": 240,
+                    "usedTotal": 2020,
                     "allocated": 1500,
-                    "remaining": -280,
+                    "remaining": -520,
                     "overLimit": True,
                     "matchStatus": "active",
+                    "chargedTo": None,
+                    "blocked": False,
                 }
             ]
         }
@@ -392,13 +396,23 @@ class EmployeeStatOut(BaseModel):
     full_name: str | None = Field(serialization_alias="fullName")
     department: str | None
     position: str | None = None
+    # Xodimning **o'z** sarfi — biriktirilganlarniki bu songa kirmaydi.
     used: int
+    # Shu xodimga biriktirilgan boshqa loginlardan qo'shilgan varaqlar.
+    used_from_linked: int = Field(default=0, serialization_alias="usedFromLinked")
+    # `used + used_from_linked` — kvota shu songa nisbatan tekshiriladi.
+    used_total: int = Field(default=0, serialization_alias="usedTotal")
     allocated: int
     remaining: int
     over_limit: bool = Field(serialization_alias="overLimit")
     match_status: Literal["active", "inactive", "unmatched"] = Field(
         serialization_alias="matchStatus"
     )
+    # Bu xodimning varaqlari qo'shimcha ravishda kimning hisobida ko'rsatilishi
+    # (`null` — hech kimga biriktirilmagan).
+    charged_to: str | None = Field(default=None, serialization_alias="chargedTo")
+    # Admin tomonidan chop etishdan to'silganmi.
+    blocked: bool = False
 
 
 class TimeseriesPointOut(BaseModel):
@@ -881,3 +895,66 @@ class QuotaSyncOut(BaseModel):
         description="Ro'yxatda yo'q foydalanuvchilarga qo'llanadigan limit (-1 — cheklovsiz)",
     )
     users: list[QuotaLimitOut] = Field(default_factory=list)
+
+
+# ---------------------------------------------------------------------------
+# Foydalanuvchi sozlamalari: bloklash va biriktirish
+# ---------------------------------------------------------------------------
+
+
+class UserOverrideOut(BaseModel):
+    """`print_user_overrides` jadvalidagi bitta qator."""
+
+    model_config = ConfigDict(
+        from_attributes=True,
+        json_schema_extra={
+            "examples": [
+                {
+                    "login": "b.soliyev",
+                    "blocked": True,
+                    "blockedAt": "2026-10-20T09:15:00Z",
+                    "blockedBy": "admin",
+                    "blockedReason": "Shaxsiy hujjatlarni chop etgani uchun",
+                    "chargeToLogin": "a.karimov",
+                }
+            ]
+        },
+    )
+
+    login: str
+    blocked: bool = False
+    blocked_at: datetime | None = Field(default=None, serialization_alias="blockedAt")
+    blocked_by: str | None = Field(default=None, serialization_alias="blockedBy")
+    blocked_reason: str | None = Field(default=None, serialization_alias="blockedReason")
+    charge_to_login: str | None = Field(default=None, serialization_alias="chargeToLogin")
+
+
+class UserOverrideIn(BaseModel):
+    """`PUT /api/user-overrides/{login}` tanasi.
+
+    Faqat yuborilgan maydonlar o'zgaradi (qisman yangilash). Masalan faqat
+    `blocked` yuborilsa, biriktirish o'z holicha qoladi.
+    """
+
+    model_config = ConfigDict(
+        populate_by_name=True,
+        json_schema_extra={
+            "examples": [
+                {"blocked": True, "blockedReason": "Limitdan ko'p oshgani uchun"},
+                {"chargeToLogin": "a.karimov"},
+                {"chargeToLogin": None},
+            ]
+        },
+    )
+
+    blocked: bool | None = Field(
+        default=None, description="true — chop etishni to'sadi, false — ruxsat beradi"
+    )
+    blocked_reason: _optional_text(2048) = Field(default=None, alias="blockedReason")
+    # `null` yuborilsa biriktirish olib tashlanadi; maydon umuman yuborilmasa
+    # o'zgarishsiz qoladi — shuning uchun "yuborilgan/yuborilmagan" farqi muhim.
+    charge_to_login: _optional_text(255) = Field(default=None, alias="chargeToLogin")
+
+    def fields_sent(self) -> set[str]:
+        """Mijoz aynan qaysi maydonlarni yuborganini qaytaradi (qisman yangilash uchun)."""
+        return set(self.model_fields_set)
