@@ -19,6 +19,10 @@ class _FakeResult:
     def __init__(self, rowcount: int) -> None:
         self.rowcount = rowcount
 
+    def scalar(self):
+        """Bazasiz muhitda `RETURNING` qator qaytarmaydi."""
+        return None
+
 
 class _FakeTx:
     async def __aenter__(self):
@@ -38,6 +42,11 @@ class _FakeSession:
         params = stmt.compile(dialect=postgresql.dialect()).params
         CAPTURED.append(params)
         return _FakeResult(len([k for k in params if k.startswith("dedup_key")]))
+
+    async def scalar(self, stmt):
+        """Printer reyestri qidiruvi — bazasiz muhitda hech narsa topilmaydi."""
+        await self.execute(stmt)
+        return None
 
 
 async def _fake_session():
@@ -210,29 +219,39 @@ def test_missing_printer_mac_and_job_id_default_to_null(client):
     assert CAPTURED[-1]["job_id_m1"] is None
 
 
-def test_printer_registry_is_upserted_when_mac_present(client):
-    """`printerMac` bo'lgan hodisalar `printers` reyestrini upsert qiladi —
-    `name` yangilanuvchilar to'plamida bo'lmasligi kerak (admin nomiga tegilmaydi).
-    """
+def _device_inserts() -> list[dict]:
+    """Reyestrga qurilma yozgan so'rovlarning parametrlari."""
+    return [p for p in CAPTURED if "last_driver_name" in p]
+
+
+def test_printer_registry_records_device_with_mac(client):
+    """MAC bilan kelgan hodisa reyestrga qurilma qo'shadi, admin nomiga tegmaydi."""
     job = dict(PAYLOAD["jobs"][0]) | {"printerMac": "52:54:00:12:34:56"}
     client.post("/api/print-jobs", json={"computer": "X", "jobs": [job]})
 
-    # Reyestr upserti print_jobs INSERT'idan OLDIN bajariladi (CAPTURED[0]).
-    printer_params = CAPTURED[0]
-    assert printer_params["mac_m0"] == "52:54:00:12:34:56"
-    assert printer_params["last_driver_name_m0"] == "HP LaserJet M404"
-    assert printer_params["last_ip_m0"] == "192.168.1.50"
-    assert "name_m0" not in printer_params
+    inserts = _device_inserts()
+    assert inserts, "qurilma yozilmadi"
+    assert inserts[0]["last_driver_name"] == "HP LaserJet M404"
+    assert inserts[0]["last_ip"] == "192.168.1.50"
+    # Admin qo'ygan nom hech qachon ingest tomonidan yozilmaydi.
+    assert inserts[0].get("name") is None
 
     # Oxirgi bajarilgan so'rov hamon print_jobs INSERT'i (mavjud testlar shunga tayanadi).
     assert "dedup_key_m0" in CAPTURED[-1]
 
 
-def test_printer_registry_not_touched_when_mac_absent(client):
-    """`printerMac` yubormagan (eski) agentlar reyestrga tegmaydi."""
+def test_printer_registry_records_device_without_mac(client):
+    """MAC yubormagan printer ham reyestrga tushadi.
+
+    Aynan shu tuzatilgan muammo: avval reyestr MAC'ni yagona kalit qilgani uchun
+    MAC'siz printerlar umuman birlashmas va har bir drayver nomi alohida
+    "printer" bo'lib hisoblanardi.
+    """
     client.post("/api/print-jobs", json=PAYLOAD)
-    assert len(CAPTURED) == 1
-    assert "dedup_key_m0" in CAPTURED[0]
+
+    inserts = _device_inserts()
+    assert len(inserts) == 2, "paketdagi ikkala printer ham reyestrga tushishi kerak"
+    assert {i["last_driver_name"] for i in inserts} == {"HP LaserJet M404", "Canon MF743Cdw"}
 
 
 def test_dedup_key_unchanged_when_printer_mac_and_job_id_present(client):

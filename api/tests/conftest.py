@@ -129,6 +129,10 @@ class FakeSession:
         await self.execute(stmt)
         return None
 
+    async def get(self, entity, ident):
+        """`session.get(...)` — bazasiz muhitda hech qanday qator topilmaydi."""
+        return None
+
     async def scalars(self, stmt) -> _FakeResult:
         return await self.execute(stmt)
 

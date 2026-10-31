@@ -22,11 +22,20 @@ from app.auth import (
     verify_credentials,
 )
 from app.config import settings
-from app.db import Base, engine, get_session
+from app.db import Base, SessionLocal, engine, get_session
 from app.logins import SQL_DOMAIN_PREFIX_PATTERN
-from app.models import AgentStatus, Employee, EmployeeQuota, PrintJob, Printer, PrintUserOverride
+from app.models import (
+    AgentStatus,
+    Employee,
+    EmployeeQuota,
+    PrinterAlias,
+    PrinterDevice,
+    PrintJob,
+    PrintUserOverride,
+)
 from app.periods import Period, PeriodType, default_quota_for, period_bounds, period_label
-from app.routers import print_quotas, user_overrides
+from app.routers import print_quotas, printers as printers_router, user_overrides
+from app.services import printers as printer_registry
 from app.schemas import (
     AdSyncStatusOut,
     AgentOut,
@@ -66,8 +75,35 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     if settings.auto_create_tables:
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
+        await _reconcile_printers_if_empty()
     yield
     await engine.dispose()
+
+
+async def _reconcile_printers_if_empty() -> None:
+    """Printer reyestri bo'sh bo'lsa, uni chop etish tarixidan bir marta quradi.
+
+    Yangi jadvallar (`printer_devices`, `printer_aliases`) birinchi marta
+    yaratilganda reyestr bo'sh bo'ladi va butun tarix hech qaysi printerga
+    bog'lanmay qoladi. Shuning uchun deploy paytida qo'lda qadam talab
+    qilmaymiz — xizmat o'zi ko'chiradi.
+
+    Shart ataylab "jadval bo'sh" — keyingi ishga tushirishlarda bajarilmaydi,
+    shuning uchun admin qo'ygan nomlar va birlashtirishlar tegilmaydi.
+    """
+    async with SessionLocal() as session:
+        existing = (
+            await session.execute(select(func.count()).select_from(PrinterAlias))
+        ).scalar() or 0
+        if existing:
+            return
+        try:
+            result = await printer_registry.reconcile(session)
+        except Exception:  # noqa: BLE001 — ko'chirish xatosi xizmatni to'xtatmasin
+            logger.exception("printer reyestrini qurib bo'lmadi")
+            return
+        if result["total"]:
+            logger.info("printer reyestri qurildi: %s", result)
 
 
 DESCRIPTION = """
@@ -140,6 +176,7 @@ UNAUTHORIZED_RESPONSE = API_KEY_UNAUTHORIZED_RESPONSE
 
 # Alohida modullarga ko'chirilgan endpointlar.
 app.include_router(print_quotas.router)
+app.include_router(printers_router.router)
 app.include_router(user_overrides.router)
 
 
@@ -185,32 +222,32 @@ def _employee_scope_clause(department: str | None):
 # ---------------------------------------------------------------------------
 
 
-def _printer_identity_expr():
-    """Guruhlash uchun identifikator: mac mavjud bo'lsa mac, aks holda xom
-    printer nomi (USB/ulashilgan/mac yubormaydigan agentlar uchun zaxira)."""
-    return func.coalesce(PrintJob.printer_mac, PrintJob.printer)
-
-
 def _printer_usage_subquery(*filters):
-    """Davr (va boshqa) filtrlar bo'yicha printer identifikatori kesimida
-    yig'indi: sahifalar, ishlar, muvaffaqiyat/xato sonlari, hamda reyestr
-    bilan bog'lash uchun `mac` va zaxira ko'rsatish uchun `raw_name`/`printer_ip`.
+    """Printer kesimida yig'indi: sahifalar, ishlar, muvaffaqiyat/xato sonlari.
+
+    Guruhlash **qurilma** bo'yicha (`app.services.printers`): yozuv avval MAC,
+    keyin IP, oxirida drayver nomi bo'yicha reyestrdagi qurilmaga bog'lanadi.
+    Shu tufayli bitta jismoniy printer turli kompyuterlarda turlicha atalgan
+    bo'lsa ham bitta qatorga birlashadi.
     """
-    identity = _printer_identity_expr().label("identity")
+    identity = printer_registry.identity_expr().label("identity")
     return (
-        select(
-            identity,
-            func.max(PrintJob.printer_mac).label("mac"),
-            func.max(PrintJob.printer).label("raw_name"),
-            func.max(PrintJob.printer_ip).label("printer_ip"),
-            func.coalesce(func.sum(PrintJob.pages), 0).label("pages"),
-            func.count().label("jobs"),
-            func.coalesce(
-                func.sum(case((PrintJob.success.is_(True), 1), else_=0)), 0
-            ).label("success_jobs"),
-            func.coalesce(
-                func.sum(case((PrintJob.success.is_(False), 1), else_=0)), 0
-            ).label("failed_jobs"),
+        printer_registry.join_device(
+            select(
+                identity,
+                func.max(printer_registry.device_id_expr()).label("device_id"),
+                func.max(PrintJob.printer_mac).label("mac"),
+                func.max(PrintJob.printer).label("raw_name"),
+                func.max(PrintJob.printer_ip).label("printer_ip"),
+                func.coalesce(func.sum(PrintJob.pages), 0).label("pages"),
+                func.count().label("jobs"),
+                func.coalesce(
+                    func.sum(case((PrintJob.success.is_(True), 1), else_=0)), 0
+                ).label("success_jobs"),
+                func.coalesce(
+                    func.sum(case((PrintJob.success.is_(False), 1), else_=0)), 0
+                ).label("failed_jobs"),
+            ).select_from(PrintJob)
         )
         .where(*filters)
         .group_by(identity)
@@ -222,21 +259,17 @@ def _print_job_printer_name_expr():
     """Bitta chop etish hodisasi uchun ko'rsatiladigan printer nomi.
 
     Tartib: admin reyestrda belgilagan nom -> reyestrdagi so'nggi drayver nomi ->
-    hodisadagi xom nom. Shu tufayli bitta jismoniy printer (bir xil MAC) barcha
-    kompyuterlarda **bir xil** nom bilan ko'rinadi, garchi har bir kompyuterda
-    drayver uni boshqacha atagan bo'lsa ham.
-
-    MAC'i yo'q hodisalarda (USB, ulashilgan navbat, boshqa L2 segment) reyestrda
-    qator bo'lmaydi va xom nom ishlatiladi.
+    hodisadagi xom nom. Shu tufayli bitta jismoniy printer barcha kompyuterlarda
+    **bir xil** nom bilan ko'rinadi, garchi har bir kompyuterda drayver uni
+    boshqacha atagan bo'lsa ham.
     """
-    return func.coalesce(Printer.name, Printer.last_driver_name, PrintJob.printer)
+    return func.coalesce(PrinterDevice.name, PrinterDevice.last_driver_name, PrintJob.printer)
 
 
 def _printer_display_name_expr(usage_subquery):
-    """Ko'rsatish uchun tayyor nom: reyestr qulay nomi -> reyestr so'nggi drayver
-    nomi -> hodisadagi xom printer nomi -> mac (identifikator o'zi)."""
+    """Ko'rsatish uchun tayyor nom: admin nomi -> so'nggi drayver nomi -> xom nom."""
     return func.coalesce(
-        Printer.name, Printer.last_driver_name, usage_subquery.c.raw_name, usage_subquery.c.mac
+        PrinterDevice.name, PrinterDevice.last_driver_name, usage_subquery.c.raw_name
     )
 
 
@@ -334,45 +367,29 @@ async def ingest_print_jobs(
     rows = list(rows_by_key.values())
     inserted = 0
 
-    # Har bir mac uchun batch ichidagi eng so'nggi (printed_at bo'yicha) hodisani
-    # tanlaymiz — printerlar reyestrini shu bilan yangilaymiz (`name`ga tegmasdan).
-    printer_updates: dict[str, dict] = {}
+    # Paketdagi har bir alohida printer uchun eng so'nggi hodisani tanlaymiz —
+    # reyestr shu bilan yangilanadi. Kalit `(mac, ip, nom)` uchligi: mac yo'q
+    # printerlar ham reyestrga tushishi kerak (ko'pchilik shunday keladi).
+    printer_updates: dict[tuple[str | None, str | None, str], dict] = {}
     for row in rows:
-        mac = row["printer_mac"]
-        if not mac:
-            continue
-        existing = printer_updates.get(mac)
+        key = (row["printer_mac"], row["printer_ip"], row["printer"])
+        existing = printer_updates.get(key)
         if existing is None or row["printed_at"] >= existing["printed_at"]:
-            printer_updates[mac] = row
+            printer_updates[key] = row
 
     async with session.begin():
         # Printerlar reyestri chop etish yozuvlaridan OLDIN yangilanadi — shuning
         # uchun bir xil paketda mac kelsa ham, oxirgi bajarilgan so'rov har doim
         # print_jobs INSERT'i bo'lib qoladi (dedup_key asosidagi rowcount hisobi
         # va testlar shunga tayanadi).
-        if printer_updates:
-            printer_rows = [
-                {
-                    "mac": mac,
-                    "last_ip": row["printer_ip"],
-                    "last_driver_name": row["printer"],
-                    "last_seen": now,
-                }
-                for mac, row in printer_updates.items()
-            ]
-            for start in range(0, len(printer_rows), CHUNK_SIZE):
-                chunk = printer_rows[start : start + CHUNK_SIZE]
-                printer_stmt = pg_insert(Printer).values(chunk)
-                printer_stmt = printer_stmt.on_conflict_do_update(
-                    index_elements=["mac"],
-                    set_={
-                        "last_ip": printer_stmt.excluded.last_ip,
-                        "last_driver_name": printer_stmt.excluded.last_driver_name,
-                        "last_seen": printer_stmt.excluded.last_seen,
-                        # `name` ataylab yangilanmaydi — admin qo'lda belgilagan qiymat saqlanadi.
-                    },
-                )
-                await session.execute(printer_stmt)
+        # Har bir alohida printer uchun qurilma topiladi yoki yaratiladi.
+        # Admin qo'ygan nom hech qachon ustiga yozilmaydi — faqat `last_*`
+        # maydonlari yangilanadi (`app.services.printers.ensure_device`).
+        for (mac, ip, name), row in printer_updates.items():
+            await printer_registry.ensure_device(
+                session,
+                printer_registry.JobPrinter(mac=mac, ip=ip, name=name, seen_at=row["printed_at"]),
+            )
 
         for start in range(0, len(rows), CHUNK_SIZE):
             chunk = rows[start : start + CHUNK_SIZE]
@@ -430,7 +447,7 @@ async def list_print_jobs(
 ) -> list[PrintJobOut]:
     """Jurnal uchun chop etish hodisalari.
 
-    Printer nomi **reyestrdan** (MAC bo'yicha) olinadi: bitta jismoniy printer turli
+    Printer nomi **reyestrdan** (MAC -> IP -> nom tartibida) olinadi: bitta jismoniy printer turli
     kompyuterlarda turlicha drayver nomi bilan ko'ringan bo'lsa ham, jurnalda hamma
     joyda admin belgilagan yagona nom chiqadi (`printerName`). Xom nom `printer`
     maydonida saqlanib qoladi — diagnostika uchun.
@@ -447,8 +464,8 @@ async def list_print_jobs(
         filters.append(
             or_(
                 PrintJob.printer.ilike(like),
-                Printer.name.ilike(like),
-                Printer.last_driver_name.ilike(like),
+                PrinterDevice.name.ilike(like),
+                PrinterDevice.last_driver_name.ilike(like),
             )
         )
     if printer_mac:
@@ -460,9 +477,12 @@ async def list_print_jobs(
     if until:
         filters.append(PrintJob.printed_at < until)
 
-    # Reyestrga bog'lash — MAC'i bo'lmagan hodisalar ham qolishi uchun outer join.
+    # Reyestrga bog'lash: yozuv MAC -> IP -> nom tartibida qurilmaga ulanadi.
+    # Hammasi outer join — reyestrda topilmagan hodisa ham ro'yxatda qoladi.
     def _with_registry(stmt):
-        return stmt.select_from(PrintJob).outerjoin(Printer, Printer.mac == PrintJob.printer_mac)
+        return printer_registry.join_device(stmt.select_from(PrintJob)).outerjoin(
+            PrinterDevice, PrinterDevice.id == printer_registry.device_id_expr()
+        )
 
     # Sahifalash uchun umumiy son — bir xil filtrlar bilan, `limit`/`offset`siz.
     count_stmt = _with_registry(select(func.count()))
@@ -482,99 +502,6 @@ async def list_print_jobs(
         out.printer_name = printer_name or job.printer
         results.append(out)
     return results
-
-
-# ---------------------------------------------------------------------------
-# Printerlar reyestri (MAC bo'yicha identifikatsiya + admin nomi)
-# ---------------------------------------------------------------------------
-
-
-def _printer_out(row: Printer) -> PrinterOut:
-    return PrinterOut(
-        mac=row.mac,
-        name=row.name,
-        display_name=row.name or row.last_driver_name or row.mac,
-        last_ip=row.last_ip,
-        last_driver_name=row.last_driver_name,
-        last_seen=row.last_seen,
-        first_seen=row.first_seen,
-    )
-
-
-@app.get(
-    "/api/printers",
-    response_model=list[PrinterOut],
-    dependencies=[Security(require_user)],
-    tags=["printers"],
-    summary="Printerlar reyestrini olish (MAC bo'yicha)",
-    response_description="Eng so'nggi ko'rilganidan boshlab tartiblangan printerlar",
-    responses=USER_UNAUTHORIZED_RESPONSE,
-)
-async def list_printers(
-    session: AsyncSession = Depends(get_session),
-    q: str | None = Query(default=None, description="MAC, nom yoki drayver nomi bo'yicha qidiruv"),
-) -> list[PrinterOut]:
-    """Ingest paytida `printer_mac` bilan kelgan har bir printer shu yerda
-    avtomatik paydo bo'ladi (`POST /api/print-jobs` upsert qiladi). Admin
-    `PUT /api/printers/{mac}` orqali qulay nom belgilaydi.
-    """
-    stmt = select(Printer).order_by(Printer.last_seen.desc().nullslast())
-    if q:
-        like = f"%{q}%"
-        stmt = stmt.where(
-            or_(
-                Printer.mac.ilike(like),
-                Printer.name.ilike(like),
-                Printer.last_driver_name.ilike(like),
-            )
-        )
-    rows = list((await session.scalars(stmt)).all())
-    return [_printer_out(row) for row in rows]
-
-
-@app.put(
-    "/api/printers/{mac}",
-    response_model=PrinterOut,
-    dependencies=[Security(require_user)],
-    tags=["printers"],
-    summary="Printerga qulay nom belgilash",
-    response_description="Yangilangan (yoki hali mavjud bo'lmasa yangi yaratilgan) reyestr qatori",
-    responses=USER_UNAUTHORIZED_RESPONSE,
-)
-async def set_printer_name(
-    mac: str,
-    payload: PrinterNameIn,
-    session: AsyncSession = Depends(get_session),
-) -> PrinterOut:
-    """Berilgan MAC uchun qulay nom belgilaydi. Reyestrda bu mac hali bo'lmasa
-    (masalan hech qanday chop etish hodisasi kelmagan bo'lsa ham admin oldindan
-    nom belgilamoqchi bo'lishi mumkin) — yangi qator yaratiladi. Bo'sh nom
-    (`""`) `NULL`ga aylanadi (nomni tozalaydi).
-    """
-    async with session.begin():
-        stmt = pg_insert(Printer).values(mac=mac, name=payload.name)
-        stmt = stmt.on_conflict_do_update(
-            index_elements=["mac"],
-            set_={"name": stmt.excluded.name},
-        ).returning(Printer)
-        result = await session.execute(stmt)
-        saved = result.scalars().all()
-
-    if saved:
-        return _printer_out(saved[0])
-
-    # Bazasiz (Fake) testlarda `RETURNING` qator qaytarmaydi — haqiqiy bazada
-    # bu yo'lga hech qachon tushilmaydi. Kiritilgan qiymatlardan mos javob quramiz.
-    return PrinterOut(
-        mac=mac,
-        name=payload.name,
-        display_name=payload.name or mac,
-        last_ip=None,
-        last_driver_name=None,
-        last_seen=None,
-        first_seen=datetime.now(timezone.utc),
-    )
-
 
 # ---------------------------------------------------------------------------
 # AD (Active Directory) sinxronizatsiyasi
@@ -1350,8 +1277,8 @@ async def stats_top(
     period_filter = (PrintJob.printed_at >= period.start, PrintJob.printed_at < period.end)
     scope = _employee_scope_clause(department)
 
-    # Printer bo'yicha MAC identifikatoriga qarab guruhlanadi (raw drayver nomi
-    # emas) — `_printer_usage_subquery`/`_printer_display_name_expr` orqali
+    # Printer bo'yicha qurilma identifikatoriga qarab guruhlanadi (xom drayver
+    # nomi emas) — `_printer_usage_subquery`/`_printer_display_name_expr` orqali
     # `/api/stats/printers` bilan bir xil qoida ishlatiladi.
     printer_filters = list(period_filter)
     if scope is not None:
@@ -1364,7 +1291,7 @@ async def stats_top(
             printer_usage.c.jobs,
         )
         .select_from(printer_usage)
-        .outerjoin(Printer, Printer.mac == printer_usage.c.mac)
+        .outerjoin(PrinterDevice, PrinterDevice.id == printer_usage.c.device_id)
         .order_by(printer_usage.c.pages.desc())
         .limit(limit)
     )
@@ -1438,16 +1365,17 @@ async def stats_printers(
     )
     stmt = (
         select(
+            usage.c.device_id,
             usage.c.mac,
             _printer_display_name_expr(usage).label("name"),
             usage.c.pages,
             usage.c.jobs,
             usage.c.success_jobs,
             usage.c.failed_jobs,
-            func.coalesce(Printer.last_ip, usage.c.printer_ip).label("last_ip"),
+            func.coalesce(PrinterDevice.last_ip, usage.c.printer_ip).label("last_ip"),
         )
         .select_from(usage)
-        .outerjoin(Printer, Printer.mac == usage.c.mac)
+        .outerjoin(PrinterDevice, PrinterDevice.id == usage.c.device_id)
         .order_by(usage.c.pages.desc())
     )
     rows = (await session.execute(stmt)).all()
@@ -1459,6 +1387,7 @@ async def stats_printers(
         success_rate = (success_jobs / jobs) if jobs else 0.0
         results.append(
             PrinterStatOut(
+                device_id=row.device_id,
                 mac=row.mac,
                 name=row.name,
                 pages=row.pages,

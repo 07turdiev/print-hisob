@@ -455,6 +455,11 @@ class PrinterStatOut(BaseModel):
         }
     )
 
+    device_id: int | None = Field(
+        default=None,
+        serialization_alias="deviceId",
+        description="Reyestrdagi qurilma id'si — nom qo'yish va birlashtirish uchun",
+    )
     mac: str | None = Field(
         default=None,
         description="Printer MAC manzili — nom-bo'yicha guruh (mac yo'q printer) uchun `null`.",
@@ -477,38 +482,59 @@ class PrinterStatOut(BaseModel):
 # ---------------------------------------------------------------------------
 
 
+class PrinterAliasOut(BaseModel):
+    """Printerni tanib olish uchun nishon."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    kind: Literal["mac", "ip", "name"] = Field(
+        description="Nishon turi: `mac` (eng barqaror), `ip`, `name` (eng zaifi)"
+    )
+    value: str
+
+
 class PrinterOut(BaseModel):
+    """Reyestrdagi bitta jismoniy printer."""
+
     model_config = ConfigDict(
-        from_attributes=True,
         json_schema_extra={
             "examples": [
                 {
-                    "mac": "52:54:00:12:34:56",
+                    "id": 7,
                     "name": "Buxgalteriya printeri",
                     "displayName": "Buxgalteriya printeri",
                     "lastIp": "192.168.1.50",
                     "lastDriverName": "Canon MF743Cdw",
                     "lastSeen": "2026-07-23T09:38:47+00:00",
                     "firstSeen": "2026-06-01T08:00:00+00:00",
+                    "aliases": [
+                        {"kind": "mac", "value": "52:54:00:12:34:56"},
+                        {"kind": "ip", "value": "192.168.1.50"},
+                        {"kind": "name", "value": "Canon svetnoy"},
+                    ],
                 }
             ]
         },
     )
 
-    mac: str
+    id: int
     name: str | None = Field(description="Admin belgilagan qulay nom (bo'lmasa `null`)")
     display_name: str = Field(
         serialization_alias="displayName",
-        description="Ko'rsatish uchun tayyor nom: `name` -> `lastDriverName` -> mac",
+        description="Ko'rsatish uchun tayyor nom: `name` -> `lastDriverName` -> nishon",
     )
     last_ip: str | None = Field(serialization_alias="lastIp")
     last_driver_name: str | None = Field(serialization_alias="lastDriverName")
     last_seen: datetime | None = Field(serialization_alias="lastSeen")
     first_seen: datetime = Field(serialization_alias="firstSeen")
+    aliases: list[PrinterAliasOut] = Field(
+        default_factory=list,
+        description="Shu printerni tanib oladigan barcha nishonlar",
+    )
 
 
 class PrinterNameIn(BaseModel):
-    """`PUT /api/printers/{mac}` tanasi."""
+    """`PUT /api/printers/{id}` tanasi."""
 
     model_config = ConfigDict(
         json_schema_extra={"examples": [{"name": "Buxgalteriya printeri"}]}
@@ -516,6 +542,20 @@ class PrinterNameIn(BaseModel):
 
     # Bo'sh satr ("") -> NULL (nomni tozalaydi).
     name: _optional_text(255) = None
+
+
+class PrinterMergeIn(BaseModel):
+    """`POST /api/printers/{id}/merge` tanasi.
+
+    `sourceId` printeri shu printer ichiga qo'shiladi: uning barcha nishonlari
+    (MAC, IP, drayver nomlari) ko'chadi va tarix bitta nom ostida birlashadi.
+    """
+
+    model_config = ConfigDict(
+        populate_by_name=True, json_schema_extra={"examples": [{"sourceId": 12}]}
+    )
+
+    source_id: int = Field(alias="sourceId", description="Qo'shilayotgan printer id'si")
 
 
 class DepartmentRollupOut(BaseModel):

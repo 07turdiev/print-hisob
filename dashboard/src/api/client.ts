@@ -170,15 +170,23 @@ export function getPrinterStats(params: PeriodParams): Promise<PrinterStat[]> {
 
 // --- Printers registry (MAC-keyed) ---------------------------------------
 
-export function getPrinters(q?: string): Promise<Printer[]> {
-  return request<Printer[]>('/api/printers', { query: { q } })
+export function getPrinters(): Promise<Printer[]> {
+  return request<Printer[]>('/api/printers')
 }
 
 /** Sets the friendly name for a printer. Empty string clears it (falls back to driver name). */
-export function renamePrinter(mac: string, name: string): Promise<Printer> {
-  return request<Printer>(`/api/printers/${encodeURIComponent(mac)}`, {
-    method: 'PUT',
-    body: { name },
+export function renamePrinter(deviceId: number, name: string): Promise<Printer> {
+  return request<Printer>(`/api/printers/${deviceId}`, { method: 'PUT', body: { name } })
+}
+
+/**
+ * Bir xil printerga tegishli ikki qatorni birlashtiradi: `sourceId` ning barcha
+ * nishonlari `targetId` ga ko'chadi va tarix bitta nom ostida birlashadi.
+ */
+export function mergePrinters(targetId: number, sourceId: number): Promise<Printer> {
+  return request<Printer>(`/api/printers/${targetId}/merge`, {
+    method: 'POST',
+    body: { sourceId },
   })
 }
 

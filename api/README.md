@@ -47,6 +47,10 @@ Dashboard uchun (JWT `Authorization: Bearer`):
 | `GET` | `/api/print-jobs` | Yozuvlarni filtrlab qaytaradi |
 | `GET` | `/api/stats/*` | Davr bo'yicha statistika (summary, employees, top, ...) |
 | `GET`/`PUT` | `/api/quotas` | Xodim kvotalarini o'qish/belgilash (faqat hisobot normasi) |
+| `GET` | `/api/printers` | Printerlar reyestri (qurilma + nishonlari) |
+| `PUT` | `/api/printers/{id}` | Printerga qulay nom qo'yish |
+| `POST` | `/api/printers/{id}/merge` | Ikki printerni birlashtirish |
+| `POST` | `/api/printers/reconcile` | Reyestrni tarixdan qayta qurish |
 | `GET` | `/api/user-overrides` | Bloklangan va biriktirilgan loginlar |
 | `PUT` | `/api/user-overrides/{login}` | Bloklash/blokdan chiqarish, biriktirish/uzish |
 | `GET` | `/health` | Xizmat va baza holati (auth talab qilinmaydi) |
@@ -70,6 +74,34 @@ curl -X POST http://127.0.0.1:8000/api/print-quotas \
 {"periodKey":"2026-Q3","defaultLimit":1000,
  "users":[{"user":"jane","limit":1500,"used":945}]}
 ```
+
+### Printerlarni tanib olish
+
+Bitta jismoniy printer har bir kompyuterda boshqacha drayver nomi bilan ko'rinadi
+(`Canon Katta`, `Canon svetnoy`, `\server\Canon-2`). Shuning uchun identifikatorlar
+printerning o'zidan ajratilgan:
+
+| Jadval | Nima saqlaydi |
+| --- | --- |
+| `printer_devices` | Qurilma: admin qo'ygan nom, so'nggi drayver nomi, so'nggi IP |
+| `printer_aliases` | Uni tanib oladigan nishonlar: `mac`, `ip`, `name` |
+
+Chop etish yozuvi qurilmaga shu tartibda bog'lanadi: **MAC -> IP -> drayver nomi**.
+
+Nom nishoni **faqat MAC ham, IP ham bo'lmaganda** avtomatik yaratiladi: ikki xil
+printer bir xil drayver nomi bilan atalgan bo'lishi mumkin, shuning uchun server
+o'zi taxmin qilib ularni qo'shib yubormaydi. Bunday qatorlarni admin
+`POST /api/printers/{id}/merge` bilan birlashtiradi — nishonlar ko'chadi va tarix
+ham, statistika ham shu zahoti bitta nom ostida ko'rinadi.
+
+`printer_ip` da IP bo'lmagan port nomlari ham keladi (`WSD-...`, `USB001`). Ular
+nishon sifatida ishlatilmaydi: `USB001` har bir kompyuterda boshqa printerni
+bildiradi.
+
+**Deploy paytida qo'lda qadam yo'q**: reyestr bo'sh bo'lsa, xizmat ishga tushganda
+butun tarixdan bir marta quriladi (`_reconcile_printers_if_empty`). Keyingi
+ishga tushirishlarda bajarilmaydi, shuning uchun admin qo'ygan nomlar va
+birlashtirishlar tegilmaydi.
 
 ### Bloklash va biriktirish
 

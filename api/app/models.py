@@ -284,3 +284,70 @@ class PrintUserOverride(Base):
         Index("ix_print_user_overrides_charge_to", "charge_to_login"),
         Index("ix_print_user_overrides_blocked", "blocked"),
     )
+
+
+class PrinterDevice(Base):
+    """Jismoniy printer \u2014 bitta qurilma, bitta nom.
+
+    Eski `Printer` jadvali MAC'ni yagona kalit qilib olgan edi, shuning uchun MAC
+    yubormaydigan printerlar (boshqa VLAN, USB, ulashilgan navbat) reyestrga
+    umuman tushmasdi va har bir drayver nomi alohida "printer" bo'lib ko'rinardi.
+    Bu yerda identifikatorlar qurilmaning o'zidan ajratilgan: qurilma bitta qator,
+    uning barcha nishonlari (MAC, IP, drayver nomlari) `PrinterAlias` da.
+
+    Shu tufayli "bitta printer, besh xil nom" muammosi nishonlarni bitta
+    qurilmaga biriktirish bilan hal bo'ladi \u2014 tarix ham, statistika ham darhol
+    bitta nom ostida birlashadi.
+    """
+
+    __tablename__ = "printer_devices"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+
+    # Admin qo'ygan qulay nom. Bo'lmasa so'nggi drayver nomi ko'rsatiladi.
+    name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # Eng so'nggi ko'rilgan xom drayver nomi \u2014 nom qo'yilmaganda zaxira.
+    last_driver_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    last_ip: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+    first_seen: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    last_seen: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (Index("ix_printer_devices_last_seen", "last_seen"),)
+
+
+class PrinterAlias(Base):
+    """Printerni tanib olish uchun nishon: MAC manzili, IP yoki drayver nomi.
+
+    Bitta qurilmada bir nechta nishon bo'lishi mumkin \u2014 aynan shu narsa turli
+    kompyuterlarda turlicha atalgan printerni birlashtiradi.
+
+    `kind` qiymatlari va ularning ishonchliligi (yuqoridan pastga):
+
+    * `mac` \u2014 eng barqaror, qurilmaning o'ziga tegishli;
+    * `ip` \u2014 statik manzilda ishonchli, DHCP'da ko'chishi mumkin;
+    * `name` \u2014 eng zaifi: ikki xil printer bir xil drayver nomi bilan atalgan
+      bo'lishi mumkin. Shuning uchun nom nishoni **faqat MAC ham, IP ham
+      bo'lmaganda** avtomatik yaratiladi; qolgan hollarda uni admin qo'lda
+      biriktiradi (birlashtirish amali).
+    """
+
+    __tablename__ = "printer_aliases"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+
+    device_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    kind: Mapped[str] = mapped_column(String(8))
+    value: Mapped[str] = mapped_column(String(255))
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    __table_args__ = (
+        # Bitta nishon faqat bitta qurilmaga tegishli bo'lishi mumkin \u2014 aks holda
+        # chop etish yozuvi qaysi printerga tegishli ekani noaniq bo'lib qoladi.
+        UniqueConstraint("kind", "value", name="uq_printer_aliases_kind_value"),
+    )

@@ -141,7 +141,9 @@ export interface MergedEmployeeRow {
 // --- Printers --------------------------------------------------------------
 
 export interface PrinterStat {
-  /** Stable identity; `null` for legacy printers grouped by driver name (no MAC reported). */
+  /** Reyestrdagi qurilma id'si — nom qo'yish va birlashtirish shu bo'yicha. */
+  deviceId: number | null
+  /** MAC manzili, agar agent yuborgan bo'lsa (ko'pincha bo'sh). */
   mac: string | null
   /** Resolved display name: admin custom name -> last driver name -> raw event name -> mac. */
   name: string
@@ -152,17 +154,26 @@ export interface PrinterStat {
   lastIp: string | null
 }
 
-/** One row from GET/PUT /api/printers — the MAC-keyed printer registry. */
+/** Printerni tanib olish uchun nishon. */
+export interface PrinterAlias {
+  /** `mac` — eng barqaror, `ip` — statik manzilda ishonchli, `name` — eng zaifi. */
+  kind: 'mac' | 'ip' | 'name'
+  value: string
+}
+
+/** One row from GET /api/printers — the printer registry (device + its aliases). */
 export interface Printer {
-  mac: string
-  /** Admin-set friendly name; `null` when not set (falls back to driver name / mac for display). */
+  id: number
+  /** Admin-set friendly name; `null` when not set. */
   name: string | null
-  /** Ready-to-show name: `name` -> `lastDriverName` -> `mac`. */
+  /** Ready-to-show name: `name` -> `lastDriverName` -> first alias. */
   displayName: string
   lastIp: string | null
   lastDriverName: string | null
   lastSeen: string | null
   firstSeen: string
+  /** Every identifier that resolves to this printer. */
+  aliases: PrinterAlias[]
 }
 
 // --- Departments ---------------------------------------------------------
