@@ -203,6 +203,28 @@ def test_printer_mac_and_job_id_are_stored(client):
     assert CAPTURED[-1]["job_id_m0"] == "7"
 
 
+@pytest.mark.parametrize(
+    "sent",
+    ["52-54-00-12-34-56", "525400123456", "5254.0012.3456", "52:54:00:12:34:56"],
+)
+def test_printer_mac_is_normalized(client, sent):
+    """Har xil MAC yozilishi bitta ko'rinishga keltiriladi.
+
+    Nishonlar SQL'da aynan taqqoslanadi, shuning uchun agent qurilishlari
+    MAC'ni turlicha yozsa bitta jismoniy printer ikki qator bo'lib ketardi.
+    """
+    job = dict(PAYLOAD["jobs"][0]) | {"printerMac": sent}
+    client.post("/api/print-jobs", json={"computer": "X", "jobs": [job]})
+    assert CAPTURED[-1]["printer_mac_m0"] == "52:54:00:12:34:56"
+
+
+def test_unrecognized_printer_mac_is_kept_as_is(client):
+    """12 ta onalik raqamga keltirib bo'lmaydigan qiymat tegilmasdan yoziladi."""
+    job = dict(PAYLOAD["jobs"][0]) | {"printerMac": "USB001"}
+    client.post("/api/print-jobs", json={"computer": "X", "jobs": [job]})
+    assert CAPTURED[-1]["printer_mac_m0"] == "USB001"
+
+
 def test_empty_printer_mac_and_job_id_become_null(client):
     job = dict(PAYLOAD["jobs"][0]) | {"printerMac": "", "jobId": ""}
     client.post("/api/print-jobs", json={"computer": "X", "jobs": [job]})

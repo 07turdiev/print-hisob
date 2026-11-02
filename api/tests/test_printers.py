@@ -121,3 +121,75 @@ def test_stats_top_printers_uses_printer_identity(client):
     r = client.get("/api/stats/top", params=PERIOD)
     assert r.status_code == 200
     assert r.json() == {"printers": [], "computers": [], "departments": []}
+
+
+# ---------------------------------------------------------------------------
+# Nishonlar almashganda qurilmani tanish qoidasi
+# ---------------------------------------------------------------------------
+
+
+class _ScriptedSession:
+    """Faqat `scalar()` ni qo'llab-quvvatlaydigan stub.
+
+    `_find_device` ketma-ket `scalar()` chaqiradi: nishon qidiruvlari, so'ng
+    (kerak bo'lsa) qurilmada MAC bor-yo'qligini tekshirish. Shu ketma-ketlikni
+    stsenariy sifatida berib, qarorning o'zini bazasiz tekshiramiz.
+    """
+
+    def __init__(self, answers):
+        self._answers = list(answers)
+        self.calls = 0
+
+    async def scalar(self, _stmt):
+        self.calls += 1
+        return self._answers.pop(0) if self._answers else None
+
+
+def _job(mac=None, ip=None, name="HP LaserJet M404"):
+    from datetime import datetime, timezone
+
+    from app.services.printers import JobPrinter
+
+    return JobPrinter(mac=mac, ip=ip, name=name, seen_at=datetime.now(timezone.utc))
+
+
+async def _find(answers, job):
+    from app.services.printers import _find_device
+
+    return await _find_device(_ScriptedSession(answers), job)
+
+
+def test_mac_claims_device_found_by_ip_when_it_has_no_mac():
+    """Agent MAC yubora boshlasa, IP bo'yicha qurilgan qurilma shundayligida qoladi.
+
+    Reyestrdagi qurilmalar MAC'siz davrda IP bo'yicha qurilgan. MAC kelganda
+    ularni yangi qurilma deb bilmaslik kerak, aks holda MAC yuborishdan foyda
+    bo'lmaydi.
+    """
+    import asyncio
+
+    # MAC qidiruvi -> topilmadi; IP qidiruvi -> #9; qurilmada MAC bormi -> yo'q.
+    got = asyncio.run(_find([None, 9, None], _job(mac="AA:BB:CC:DD:EE:01", ip="192.168.1.50")))
+    assert got == 9
+
+
+def test_stale_ip_with_different_mac_is_not_reused():
+    """Eski IP boshqa MAC bilan kelsa, qurilma qayta ishlatilmaydi.
+
+    DHCP manzilni boshqa printerga bergan yoki printer almashtirilgan \u2014 bu
+    holda `None` qaytadi va chaqiruvchi yangi qurilma yaratadi. Ikki printer
+    tarixini qo'shib yuborish xavfliroq: qo'shilganini ajratib bo'lmaydi.
+    """
+    import asyncio
+
+    # MAC qidiruvi -> topilmadi; IP qidiruvi -> #9; qurilmada MAC bor -> ziddiyat.
+    got = asyncio.run(_find([None, 9, 1], _job(mac="AA:BB:CC:DD:EE:02", ip="192.168.1.50")))
+    assert got is None
+
+
+def test_ip_match_without_mac_in_job_is_kept():
+    """Yozuvda MAC bo'lmasa, IP bo'yicha moslik ziddiyat tekshirilmaydi."""
+    import asyncio
+
+    got = asyncio.run(_find([9], _job(ip="192.168.1.50")))
+    assert got == 9

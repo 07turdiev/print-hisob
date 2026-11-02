@@ -62,6 +62,7 @@ from app.schemas import (
     TimeseriesPointOut,
     TopItemOut,
     TopStatsOut,
+    normalize_mac,
 )
 
 logger = logging.getLogger(__name__)
@@ -469,7 +470,9 @@ async def list_print_jobs(
             )
         )
     if printer_mac:
-        filters.append(PrintJob.printer_mac == printer_mac)
+        # Filtr ham ingest bilan bir xil ko'rinishga keltiriladi, aks holda
+        # `52-54-...` deb qidirilgan MAC bazadagi `52:54:...` bilan mos kelmaydi.
+        filters.append(PrintJob.printer_mac == normalize_mac(printer_mac))
     if success is not None:
         filters.append(PrintJob.success.is_(success))
     if since:

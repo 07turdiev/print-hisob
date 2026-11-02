@@ -133,6 +133,16 @@ async def _claim_alias(session: AsyncSession, device_id: int, kind: str, value: 
     return bool(result.rowcount)
 
 
+async def _has_alias(session: AsyncSession, device_id: int, kind: str) -> bool:
+    """Qurilmaga shu turdagi nishon allaqachon biriktirilganmi."""
+    found = await session.scalar(
+        select(PrinterAlias.id)
+        .where(PrinterAlias.device_id == device_id, PrinterAlias.kind == kind)
+        .limit(1)
+    )
+    return found is not None
+
+
 async def _find_device(session: AsyncSession, job: JobPrinter) -> int | None:
     """Yozuvga mos qurilmani nishonlar bo'yicha qidiradi (mac -> ip -> nom)."""
     candidates: list[tuple[str, str]] = []
@@ -148,8 +158,21 @@ async def _find_device(session: AsyncSession, job: JobPrinter) -> int | None:
                 PrinterAlias.kind == kind, PrinterAlias.value == value
             )
         )
-        if found is not None:
-            return int(found)
+        if found is None:
+            continue
+        device_id = int(found)
+
+        # IP yoki nom bo'yicha topildi, lekin qurilmada MAC turibdi — va u
+        # bu yozuvning MAC'i emas (aks holda tsikl birinchi qadamda tugardi).
+        # Demak IP boshqa jismoniy printerga o'tgan: DHCP manzilni qayta
+        # taqsimlagan yoki printer almashtirilgan. Bu holda eski qurilmaga
+        # yozib ketmaymiz — yangisi yaratiladi va admin kerak bo'lsa `merge`
+        # qiladi. Jim turib ikki printerning tarixini qo'shib yuborish
+        # xavfliroq: qo'shilganini ajratib bo'lmaydi.
+        if kind != MAC and job.mac and await _has_alias(session, device_id, MAC):
+            return None
+
+        return device_id
     return None
 
 
@@ -175,6 +198,20 @@ async def ensure_device(session: AsyncSession, job: JobPrinter) -> int:
 
         kind, value = job.identity()
         await _claim_alias(session, device_id, kind, value)
+
+    # Topilgan qurilmaga MAC'ni ham biriktiramiz, lekin faqat unda MAC hali
+    # bo'lmasa. Buning sababi: reyestrdagi qurilmalar IP bo'yicha qurilgan
+    # (agent MAC yubormagan davrda), shuning uchun MAC kelib boshlaganda u
+    # o'sha qurilmaga yozilishi kerak — aks holda IP almashgan kuni printer
+    # yangi qurilma bo'lib ajralib ketadi va MAC yuborishdan foyda bo'lmaydi.
+    #
+    # Qurilmada boshqa MAC turgan bo'lsa tegmaymiz: bu plata almashganini yoki
+    # IP boshqa jismoniy printerga o'tganini bildiradi. Jim turib ikki
+    # printerni qo'shib yuborishdan ko'ra, ularni alohida qoldirib adminning
+    # `merge` qarorini kutish xavfsizroq — noto'g'ri qo'shilgan tarixni
+    # ajratib bo'lmaydi.
+    if job.mac and not await _has_alias(session, device_id, MAC):
+        await _claim_alias(session, device_id, MAC, job.mac)
 
     # MAC bilan kelgan qurilmaning IP'sini ham biriktiramiz: shunda o'sha printer
     # MAC'siz (boshqa kompyuterdan) ko'ringanda alohida qurilma yaratilmaydi.

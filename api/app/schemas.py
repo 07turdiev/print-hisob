@@ -1,4 +1,5 @@
 import hashlib
+import re
 from datetime import datetime, timezone
 from typing import Annotated, Literal
 
@@ -20,6 +21,29 @@ def _text(max_length: int):
 def _optional_text(max_length: int):
     """Bo'sh satr ("") NULL sifatida yoziladi."""
     return Annotated[_text(max_length) | None, BeforeValidator(_empty_to_none)]
+
+
+def normalize_mac(value: object) -> object:
+    r"""MAC manzilini bitta ko'rinishga keltiradi: `52:54:00:12:34:56`.
+
+    Turli agent qurilishlari MAC'ni har xil yozishi mumkin (`52-54-00-12-34-56`,
+    `525400123456`, kichik harf). Printer nishonlari SQL'da aynan taqqoslanadi,
+    shuning uchun bitta jismoniy printer ikki qator bo'lib ketmasligi uchun
+    qiymat yozishdan oldin normallashtiriladi. 12 ta onalik raqamga keltirib
+    bo'lmaydigan qiymat tegilmasdan qoladi (keyinroq boshqa format kelsa, u
+    o'z holida saqlanadi va hech narsa buzilmaydi).
+    """
+    if not isinstance(value, str):
+        return value
+    digits = re.sub(r"[^0-9A-Fa-f]", "", value)
+    if len(digits) != 12:
+        return value
+    return ":".join(digits[i : i + 2] for i in range(0, 12, 2)).upper()
+
+
+def _mac_text(max_length: int):
+    """MAC maydoni: normallashtiriladi, bo'sh satr NULL bo'ladi."""
+    return Annotated[_optional_text(max_length), BeforeValidator(normalize_mac)]
 
 
 # Bitta `POST /api/print-jobs` paketidagi hodisalarning eng ko'p soni.
@@ -77,7 +101,7 @@ class PrintJobIn(BaseModel):
     success: bool
     reason: _optional_text(4096) = None
     # Printerning MAC manzili — faqat ma'lumot uchun. Bo'sh satr -> NULL.
-    printer_mac: _optional_text(64) = Field(default=None, alias="printerMac")
+    printer_mac: _mac_text(64) = Field(default=None, alias="printerMac")
     # Windows spooler job id ("7" kabi) — matn sifatida keladi va shunday saqlanadi.
     # Bo'sh satr -> NULL.
     job_id: _optional_text(64) = Field(default=None, alias="jobId")
