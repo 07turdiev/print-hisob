@@ -347,12 +347,18 @@ Boshqa sozlamalar o'zgarmaydi.
 
 ## Chiqarish tartibi
 
-1. **Server** — `allowedPrinters` javobga qo'shiladi, boshida hamma uchun `["*"]` (ya'ni
-   hech kim cheklanmaydi). Eski agentlar notanish maydonni e'tiborsiz qoldiradi, shuning
-   uchun flotda hech narsa o'zgarmaydi.
+1. **Server — bajarildi (2026-yil 2-noyabr).** `allowedPrinters` javobga qo'shildi va
+   serverda ishlab turibdi, boshida hamma uchun `["*"]`. Eski agentlar notanish maydonni
+   e'tiborsiz qoldiradi, shuning uchun flotda hech narsa o'zgarmadi. **Ya'ni siz hoziroq
+   haqiqiy serverga so'rov yuborib javobni ko'rishingiz mumkin.**
 2. **Agent** — yangi versiya tayyorlanadi va bir-ikki mashinada sinaladi.
-3. **Guruhlar** — admin dashboardda birinchi guruhni tuzadi; faqat shundan keyin haqiqiy
-   cheklov boshlanadi.
+3. **Guruhlar** — admin dashboardda guruh tuzadi; "faqat belgilangan printerlar" siyosati
+   aynan shundan keyin kuchga kiradi.
+
+Yana bir narsa o'zgardi: `limit: 0` endi faqat xodimni qo'lda bloklashdan emas, guruh
+siyosatidan ham kelishi mumkin ("umuman chiqarmaydi" darajasi). Agent uchun farqi yo'q —
+ikkisi ham bir xil maydon orqali keladi va bugungi versiya ularni allaqachon to'g'ri
+bajaradi.
 
 Ya'ni agentni butun flotga bir vaqtda yoyish shart emas: yangilanmagan mashinalar
 oddiygina cheklamaydi, lekin sarf hisobi ularda ham to'g'ri ishlaydi.

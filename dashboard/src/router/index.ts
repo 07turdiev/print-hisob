@@ -6,6 +6,7 @@ import QuarterlyView from '../views/QuarterlyView.vue'
 import MonthlyView from '../views/MonthlyView.vue'
 import EmployeesView from '../views/EmployeesView.vue'
 import PrintersView from '../views/PrintersView.vue'
+import GroupsView from '../views/GroupsView.vue'
 import DepartmentsView from '../views/DepartmentsView.vue'
 import JournalView from '../views/JournalView.vue'
 import AgentsView from '../views/AgentsView.vue'
@@ -96,6 +97,17 @@ const router = createRouter({
         title: 'Printerlar',
         section: "Ma'lumotnomalar",
         description: "Qurilmalar bo'yicha sarf, xatolar va do'stona nomlar",
+        showPeriodSelector: true,
+      },
+    },
+    {
+      path: '/guruhlar',
+      name: 'groups',
+      component: GroupsView,
+      meta: {
+        title: 'Guruhlar va ruxsatlar',
+        section: 'Nazorat',
+        description: "Xodimlar guruhlari, ruxsat etilgan printerlar va buzilishlar hisoboti",
         showPeriodSelector: true,
       },
     },

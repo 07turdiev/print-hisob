@@ -34,7 +34,7 @@ from app.config import settings
 from app.logins import SQL_DOMAIN_PREFIX_PATTERN, normalize_login
 from app.models import AgentQuotaState, PrintJob
 from app.periods import Period, PeriodType, current_period, period_key
-from app.services import user_overrides
+from app.services import printer_groups, user_overrides
 from app.schemas import QuotaLimitOut, QuotaSyncIn, QuotaSyncOut
 
 # Bitta INSERT'dagi qatorlar soni (Postgres parametr chegarasi uchun).
@@ -141,6 +141,31 @@ async def _save_state(
     await session.commit()
 
 
+def _allowed_for(
+    login: str,
+    policies: dict[str, printer_groups.LoginPolicy],
+    *,
+    blocked: bool,
+) -> list[str]:
+    """Shu login uchun ruxsat etilgan printerlar ro'yxati.
+
+    Har doim ochiq-oydin qiymat qaytariladi, hatto cheklov bo'lmaganda ham
+    (`["*"]`). Sababi `limit` bilan bir xil: agent javobni keshlaydi, shuning
+    uchun "cheklov olindi" xabari ro'yxatdan yo'qolish orqali emas, aniq qiymat
+    orqali yetkazilishi kerak. Aks holda guruhdan chiqarilgan xodim eski
+    cheklov bilan qolib ketardi.
+    """
+    if blocked:
+        return []
+
+    policy = policies.get(login)
+    if policy is None or policy.policy == printer_groups.ALL:
+        return [printer_groups.ANY_PRINTER]
+    if policy.policy == printer_groups.ALLOWED:
+        return list(policy.tokens)
+    return []
+
+
 async def sync_quotas(session: AsyncSession, payload: QuotaSyncIn) -> QuotaSyncOut:
     """Agent hisobotini qabul qilib, joriy holatni qaytaradi.
 
@@ -156,7 +181,12 @@ async def sync_quotas(session: AsyncSession, payload: QuotaSyncIn) -> QuotaSyncO
     aniq `-1` qiymati orqali yetkaziladi.
 
     Kvota bu yerda umuman qatnashmaydi: u faqat hisobot normasi. Chop etishni
-    to'sish faqat dashboarddagi "Bloklash" tugmasi orqali bo'ladi.
+    to'sish ikki yo'l bilan bo'ladi — xodim ustidagi "Bloklash" tugmasi va
+    `policy='none'` guruhi. Ikkisi ham bir xil kanalga tushadi (`limit: 0`),
+    shuning uchun guruh orqali to'sish bugungi agentlarda ham ishlaydi.
+
+    `allowedPrinters` esa yangi: u faqat `allowedPrinters` ni biladigan agentda
+    kuchga kiradi. Eski agentlar notanish maydonni e'tiborsiz qoldiradi.
     """
     period = current_period(agent_period_type())
     key = period_key(period.period_type, period.year, period.period_no)
@@ -164,6 +194,10 @@ async def sync_quotas(session: AsyncSession, payload: QuotaSyncIn) -> QuotaSyncO
     report_used = settings.agent_quota_report_used
     usage = await _usage_by_login(session, period) if report_used else {}
     known = await user_overrides.known_login_states(session)
+    policies = await printer_groups.policy_by_login(session)
+    group_blocked = {
+        login for login, p in policies.items() if p.policy == printer_groups.NONE
+    }
 
     # Agent so'raganlar + admin tegib o'tgan barcha loginlar. Ikkinchisi faqat
     # bloklanganlar emas: blokdan chiqarilganga ham ochiq-oydin `-1` yuborilishi
@@ -173,16 +207,22 @@ async def sync_quotas(session: AsyncSession, payload: QuotaSyncIn) -> QuotaSyncO
     logins = dict(requested)
     for login in known:
         logins.setdefault(login, login)
+    # Guruh a'zolari ham qo'shiladi: agent ularni so'ramagan bo'lsa ham
+    # cheklov yetib borishi kerak.
+    for login in policies:
+        logins.setdefault(login, login)
 
     users: list[QuotaLimitOut] = []
     served: dict[str, QuotaLimitOut] = {}
     for login, display_name in sorted(logins.items()):
+        blocked = bool(known.get(login)) or login in group_blocked
         answer = QuotaLimitOut(
             # Agent nomlarni registrga sezgir bo'lmagan holda solishtiradi, shuning
             # uchun u yuborgan shaklni o'zgartirmasdan qaytaramiz.
             user=display_name,
-            limit=BLOCKED if known.get(login) else UNLIMITED,
+            limit=BLOCKED if blocked else UNLIMITED,
             used=usage.get(login, 0) if report_used else None,
+            allowed_printers=_allowed_for(login, policies, blocked=blocked),
         )
         users.append(answer)
         served[login] = answer

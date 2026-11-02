@@ -192,6 +192,55 @@ export interface PrinterMergeSuggestion {
   sharedName: string
 }
 
+/**
+ * Guruh siyosati:
+ * - `all` — barcha printerlar;
+ * - `allowed` — faqat belgilangan qurilmalar;
+ * - `none` — umuman chiqara olmaydi.
+ */
+export type PrinterGroupPolicy = 'all' | 'allowed' | 'none'
+
+/** Xodimlar guruhi va unga biriktirilgan printer ruxsati. */
+export interface PrinterGroup {
+  id: number
+  name: string
+  policy: PrinterGroupPolicy
+  /** Ruxsat etilgan qurilmalar — `policy === 'allowed'` bo'lganda ishlatiladi. */
+  deviceIds: number[]
+  /** Guruh a'zolari (normallashtirilgan loginlar). */
+  logins: string[]
+}
+
+/**
+ * Guruhni qisman yangilash. Yuborilmagan maydon tegilmaydi, bo'sh ro'yxat esa
+ * tozalaydi — shuning uchun `undefined` va `[]` bir xil emas.
+ */
+export interface PrinterGroupPatch {
+  name?: string
+  policy?: PrinterGroupPolicy
+  deviceIds?: number[]
+  logins?: string[]
+}
+
+/**
+ * Ruxsat etilmagan printerdan chiqarilgan qog'oz (hisobot qatori).
+ *
+ * Faqat muvaffaqiyatli ishlar kiradi — hisobot "qog'oz sarflandi" degan faktni
+ * ko'rsatadi, urinishni emas.
+ */
+export interface PolicyViolation {
+  login: string
+  fullName: string | null
+  department: string | null
+  groupName: string
+  policy: PrinterGroupPolicy
+  deviceId: number | null
+  printerName: string
+  pages: number
+  jobs: number
+  lastAt: string
+}
+
 // --- Departments ---------------------------------------------------------
 
 export interface DepartmentStat {

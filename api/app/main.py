@@ -23,6 +23,7 @@ from app.auth import (
 )
 from app.config import settings
 from app.db import Base, SessionLocal, engine, get_session
+from app.deps import period_params
 from app.logins import SQL_DOMAIN_PREFIX_PATTERN
 from app.models import (
     AgentStatus,
@@ -34,7 +35,12 @@ from app.models import (
     PrintUserOverride,
 )
 from app.periods import Period, PeriodType, default_quota_for, period_bounds, period_label
-from app.routers import print_quotas, printers as printers_router, user_overrides
+from app.routers import (
+    print_quotas,
+    printer_groups as printer_groups_router,
+    printers as printers_router,
+    user_overrides,
+)
 from app.services import printers as printer_registry
 from app.schemas import (
     AdSyncStatusOut,
@@ -177,24 +183,12 @@ UNAUTHORIZED_RESPONSE = API_KEY_UNAUTHORIZED_RESPONSE
 
 # Alohida modullarga ko'chirilgan endpointlar.
 app.include_router(print_quotas.router)
+app.include_router(printer_groups_router.router)
 app.include_router(printers_router.router)
 app.include_router(user_overrides.router)
 
 
-async def period_params(
-    period_type: PeriodType = Query(..., description="Davr turi: 'month' yoki 'quarter'"),
-    year: int = Query(..., ge=2000, le=2100, description="Yil, masalan 2026"),
-    period_no: int = Query(
-        ..., description="Oy uchun 1..12, chorak uchun 1..4 (Q1=1..Q4=4)"
-    ),
-) -> Period:
-    """`period_type/year/period_no` query-parametrlaridan `[start, end)` chegarasini hisoblaydi."""
-    try:
-        start, end = period_bounds(period_type, year, period_no)
-    except ValueError as exc:
-        # `status.HTTP_422_UNPROCESSABLE_ENTITY` starlette'da eskirgan; sonni to'g'ridan-to'g'ri ishlatamiz.
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-    return Period(period_type=period_type, year=year, period_no=period_no, start=start, end=end)
+
 
 
 def _employee_scope_clause(department: str | None):

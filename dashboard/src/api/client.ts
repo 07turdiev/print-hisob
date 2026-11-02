@@ -14,9 +14,13 @@ import type {
   FailureReason,
   LoginResponse,
   PeriodParams,
+  PolicyViolation,
   PrintJobPage,
   PrintJobQuery,
   Printer,
+  PrinterGroup,
+  PrinterGroupPatch,
+  PrinterGroupPolicy,
   PrinterMergeSuggestion,
   PrinterStat,
   StatsSummary,
@@ -197,6 +201,38 @@ export function mergePrinters(targetId: number, sourceId: number): Promise<Print
  */
 export function getPrinterSuggestions(): Promise<PrinterMergeSuggestion[]> {
   return request<PrinterMergeSuggestion[]>('/api/printers/suggestions')
+}
+
+// --- Guruhlar va printer ruxsatlari --------------------------------------
+
+export function getPrinterGroups(): Promise<PrinterGroup[]> {
+  return request<PrinterGroup[]>('/api/printer-groups')
+}
+
+export function createPrinterGroup(
+  name: string,
+  policy: PrinterGroupPolicy,
+): Promise<PrinterGroup> {
+  return request<PrinterGroup>('/api/printer-groups', {
+    method: 'POST',
+    body: { name, policy },
+  })
+}
+
+/** Qisman yangilash: faqat `patch` dagi maydonlar o'zgaradi. */
+export function updatePrinterGroup(id: number, patch: PrinterGroupPatch): Promise<PrinterGroup> {
+  return request<PrinterGroup>(`/api/printer-groups/${id}`, { method: 'PUT', body: patch })
+}
+
+export function deletePrinterGroup(id: number): Promise<void> {
+  return request<void>(`/api/printer-groups/${id}`, { method: 'DELETE' })
+}
+
+/** Guruh siyosatini buzib chiqarilgan qog'oz (tanlangan davr uchun). */
+export function getPolicyViolations(params: PeriodParams): Promise<PolicyViolation[]> {
+  return request<PolicyViolation[]>('/api/printer-groups/violations', {
+    query: periodQuery(params),
+  })
 }
 
 export function getDepartmentStats(params: PeriodParams): Promise<DepartmentStat[]> {

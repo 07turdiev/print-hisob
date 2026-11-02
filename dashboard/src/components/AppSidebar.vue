@@ -29,6 +29,7 @@ const NAV_GROUPS = [
   {
     label: 'Nazorat',
     items: [
+      { to: '/guruhlar', icon: 'shield', label: 'Guruhlar va ruxsatlar' },
       { to: '/jurnal', icon: 'journal', label: 'Chop etishlar jurnali' },
       { to: '/agentlar', icon: 'agents', label: 'Agentlar holati' },
     ],

@@ -351,3 +351,74 @@ class PrinterAlias(Base):
         # chop etish yozuvi qaysi printerga tegishli ekani noaniq bo'lib qoladi.
         UniqueConstraint("kind", "value", name="uq_printer_aliases_kind_value"),
     )
+
+
+class PrinterGroup(Base):
+    r"""Xodimlar guruhi va unga biriktirilgan printer siyosati.
+
+    Uch daraja bor va ular bir-birini almashtiradi (`policy`):
+
+    * `all` \u2014 to'liq ruxsat, barcha printerlar;
+    * `allowed` \u2014 faqat `PrinterGroupPrinter` da belgilangan qurilmalar;
+    * `none` \u2014 umuman chop eta olmaydi.
+
+    `none` darajasi yangi mexanizm talab qilmaydi: u agentga mavjud `limit: 0`
+    orqali yetadi, ya'ni "Bloklash" tugmasi bilan bir xil kanal. `allowed` esa
+    agentdagi `allowedPrinters` qo'llanmasi chiqqandan keyin kuchga kiradi \u2014
+    shu vaqtgacha u faqat hisobotda ko'rinadi.
+    """
+
+    __tablename__ = "printer_groups"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    name: Mapped[str] = mapped_column(String(255))
+    policy: Mapped[str] = mapped_column(String(16), server_default="all")
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    __table_args__ = (UniqueConstraint("name", name="uq_printer_groups_name"),)
+
+
+class PrinterGroupPrinter(Base):
+    """Guruhga ruxsat etilgan qurilma (`policy='allowed'` bo'lganda ishlatiladi).
+
+    Qurilma reyestrdagi `printer_devices.id` bo'yicha biriktiriladi, nom bilan
+    emas \u2014 shunda admin printerning nomini o'zgartirsa yoki ikki qatorni
+    birlashtirsa ruxsat buzilmaydi.
+    """
+
+    __tablename__ = "printer_group_printers"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    group_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    device_id: Mapped[int] = mapped_column(BigInteger, index=True)
+
+    __table_args__ = (
+        UniqueConstraint("group_id", "device_id", name="uq_printer_group_printers"),
+    )
+
+
+class PrinterGroupMember(Base):
+    r"""Guruhdagi xodim.
+
+    `login` butun jadvalda yagona: bir xodim bir vaqtda faqat bitta guruhda
+    bo'ladi. Bu cheklov ataylab baza darajasida turadi \u2014 aks holda "bu odamga
+    nima ruxsat etilgan" degan savolga javob guruhlarni qo'shish qoidasiga
+    bog'liq bo'lib qolardi va sabab topish qiyinlashardi.
+
+    `login` normallashtirilgan ko'rinishda saqlanadi (`MADANIYAT\E.Turdiyev`
+    emas, `e.turdiyev`) \u2014 `app.logins.normalize_login` bilan bir xil.
+    """
+
+    __tablename__ = "printer_group_members"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    group_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    login: Mapped[str] = mapped_column(String(255))
+
+    __table_args__ = (UniqueConstraint("login", name="uq_printer_group_members_login"),)

@@ -959,6 +959,14 @@ class QuotaLimitOut(BaseModel):
     user: str
     limit: int | None = None
     used: int | None = None
+    # Ruxsat etilgan printerlar. `["*"]` — hammasi, `[]` — hech qaysi,
+    # `null` — "fikr yo'q" (agent `defaultLimit` yonidagi umumiy ro'yxatga
+    # tushadi). Cheklanmagan loginga ham ochiq-oydin `["*"]` yuboriladi: agent
+    # javobni keshlaydi, shuning uchun "cheklov olindi" xabari ro'yxatdan
+    # yo'qolish orqali emas, aniq qiymat orqali yetkaziladi.
+    allowed_printers: list[str] | None = Field(
+        default=None, serialization_alias="allowedPrinters"
+    )
 
 
 class QuotaSyncOut(BaseModel):
@@ -983,6 +991,11 @@ class QuotaSyncOut(BaseModel):
     default_limit: int = Field(
         serialization_alias="defaultLimit",
         description="Ro'yxatda yo'q foydalanuvchilarga qo'llanadigan limit (-1 — cheklovsiz)",
+    )
+    allowed_printers: list[str] = Field(
+        default_factory=lambda: ["*"],
+        serialization_alias="allowedPrinters",
+        description="Ro'yxatda yo'q foydalanuvchilarga qo'llanadigan ruxsat (`[\"*\"]` — hammasi)",
     )
     users: list[QuotaLimitOut] = Field(default_factory=list)
 
@@ -1048,3 +1061,116 @@ class UserOverrideIn(BaseModel):
     def fields_sent(self) -> set[str]:
         """Mijoz aynan qaysi maydonlarni yuborganini qaytaradi (qisman yangilash uchun)."""
         return set(self.model_fields_set)
+
+
+# ---------------------------------------------------------------------------
+# Xodimlar guruhlari va printer ruxsatlari
+# ---------------------------------------------------------------------------
+
+PrinterGroupPolicy = Literal["all", "allowed", "none"]
+
+
+class PrinterGroupOut(BaseModel):
+    """Bitta guruh: siyosati, ruxsat etilgan qurilmalari va a'zolari."""
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "examples": [
+                {
+                    "id": 3,
+                    "name": "Kotibiyat",
+                    "policy": "allowed",
+                    "deviceIds": [9, 12],
+                    "logins": ["a.karimov", "e.turdiyev"],
+                }
+            ]
+        }
+    )
+
+    id: int
+    name: str
+    policy: PrinterGroupPolicy = Field(
+        description="`all` — barcha printerlar, `allowed` — faqat belgilangan, `none` — chiqara olmaydi"
+    )
+    device_ids: list[int] = Field(
+        default_factory=list,
+        serialization_alias="deviceIds",
+        description="Ruxsat etilgan qurilmalar (`policy='allowed'` bo'lganda ishlatiladi)",
+    )
+    logins: list[str] = Field(
+        default_factory=list, description="Guruh a'zolari (normallashtirilgan loginlar)"
+    )
+
+
+class PrinterGroupIn(BaseModel):
+    """`POST /api/printer-groups` tanasi."""
+
+    model_config = ConfigDict(
+        populate_by_name=True,
+        json_schema_extra={"examples": [{"name": "Kotibiyat", "policy": "allowed"}]},
+    )
+
+    name: _text(255)
+    policy: PrinterGroupPolicy = "all"
+
+
+class PrinterGroupPatchIn(BaseModel):
+    """`PUT /api/printer-groups/{id}` tanasi — qisman yangilash.
+
+    Faqat yuborilgan maydonlar o'zgaradi. `deviceIds` yoki `logins` yuborilsa
+    ro'yxat butunlay almashtiriladi (dashboard har doim to'liq ro'yxat yuboradi).
+    """
+
+    model_config = ConfigDict(
+        populate_by_name=True,
+        json_schema_extra={
+            "examples": [
+                {"policy": "allowed", "deviceIds": [9, 12]},
+                {"logins": ["a.karimov"]},
+                {"name": "3-qavat"},
+            ]
+        },
+    )
+
+    name: _optional_text(255) = None
+    policy: PrinterGroupPolicy | None = None
+    device_ids: list[int] | None = Field(default=None, alias="deviceIds")
+    logins: list[_text(255)] | None = None
+
+
+class PolicyViolationOut(BaseModel):
+    """Xodim o'ziga ruxsat etilmagan printerdan chiqargan \u2014 hisobotdagi bitta qator.
+
+    Faqat muvaffaqiyatli ishlar kiradi: hisobot "qog'oz sarflandi" degan faktni
+    ko'rsatadi, urinishni emas.
+    """
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "examples": [
+                {
+                    "login": "e.turdiyev",
+                    "fullName": "Turdiyev Elbek",
+                    "department": "Kotibiyat",
+                    "groupName": "Kotibiyat",
+                    "policy": "allowed",
+                    "deviceId": 12,
+                    "printerName": "3-qavat, rangli",
+                    "pages": 84,
+                    "jobs": 11,
+                    "lastAt": "2026-11-02T09:15:00+00:00",
+                }
+            ]
+        }
+    )
+
+    login: str
+    full_name: str | None = Field(serialization_alias="fullName")
+    department: str | None
+    group_name: str = Field(serialization_alias="groupName")
+    policy: PrinterGroupPolicy
+    device_id: int | None = Field(serialization_alias="deviceId")
+    printer_name: str = Field(serialization_alias="printerName")
+    pages: int
+    jobs: int
+    last_at: datetime = Field(serialization_alias="lastAt")
