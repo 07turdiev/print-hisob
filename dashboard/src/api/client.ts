@@ -17,6 +17,7 @@ import type {
   PrintJobPage,
   PrintJobQuery,
   Printer,
+  PrinterMergeSuggestion,
   PrinterStat,
   StatsSummary,
   TimeseriesPoint,
@@ -188,6 +189,14 @@ export function mergePrinters(targetId: number, sourceId: number): Promise<Print
     method: 'POST',
     body: { sourceId },
   })
+}
+
+/**
+ * Ehtimoliy bir xil printerlar juftligi. Server hech narsani o'zi
+ * birlashtirmaydi — ro'yxat faqat adminga ko'rsatiladi.
+ */
+export function getPrinterSuggestions(): Promise<PrinterMergeSuggestion[]> {
+  return request<PrinterMergeSuggestion[]>('/api/printers/suggestions')
 }
 
 export function getDepartmentStats(params: PeriodParams): Promise<DepartmentStat[]> {

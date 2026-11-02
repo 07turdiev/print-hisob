@@ -404,6 +404,93 @@ async def list_devices(session: AsyncSession) -> list[tuple[PrinterDevice, list[
     return [(d, by_device.get(d.id, [])) for d in devices]
 
 
+@dataclass(frozen=True)
+class MergeSuggestion:
+    """Faqat nom bo'yicha aniqlangan qurilma uchun birlashtirish taklifi."""
+
+    device_id: int
+    target_id: int
+    shared_name: str
+
+
+def merge_suggestions_stmt():
+    r"""Nom bo'yicha ajralib qolgan qurilmalarga mos MAC'li qurilmani topadi.
+
+    Bitta printer bir kompyuterda MAC bilan, boshqasida MAC'siz ko'rinishi
+    mumkin (ulashilgan navbat, boshqa pod-tarmoq). MAC'siz yozuv faqat drayver
+    nomi bilan keladi va alohida qurilma bo'lib ajraladi. Agar **aynan shu
+    drayver nomi** boshqa kompyuterdan MAC bilan ham kelgan bo'lsa, ikkisi
+    bitta printer bo'lishi ehtimoli katta.
+
+    Ehtimol \u2014 dalil emas, shuning uchun bu funksiya hech narsa o'zgartirmaydi:
+    faqat taklif qaytaradi, qarorni admin qabul qiladi. Ikki xil printer bir xil
+    drayver nomi bilan atalishi mumkin (bir modeldagi ikki qurilma), shuning
+    uchun nom bir nechta MAC'li qurilmaga ishora qilsa taklif berilmaydi \u2014
+    noto'g'ri birlashtirishni keyin ajratib bo'lmaydi.
+    """
+    strong = aliased(PrinterAlias)
+    has_strong = (
+        select(strong.id)
+        .where(strong.device_id == PrinterAlias.device_id, strong.kind.in_((MAC, IP)))
+        .exists()
+    )
+
+    # Faqat nom nishoni bor qurilmalar: MAC yoki IP bo'lsa ular yetarli.
+    name_only = (
+        select(
+            PrinterAlias.device_id.label("device_id"),
+            PrinterAlias.value.label("name"),
+        )
+        .where(PrinterAlias.kind == NAME, ~has_strong)
+        .cte("name_only")
+    )
+
+    # Shu nom MAC bilan ham kelganmi va o'sha MAC qaysi qurilmaga tegishli.
+    mac_alias = aliased(PrinterAlias)
+    pairs = (
+        select(
+            name_only.c.device_id,
+            mac_alias.device_id.label("target_id"),
+            func.min(name_only.c.name).label("shared_name"),
+        )
+        .join(PrintJob, PrintJob.printer == name_only.c.name)
+        .join(
+            mac_alias,
+            (mac_alias.kind == MAC) & (mac_alias.value == PrintJob.printer_mac),
+        )
+        .where(PrintJob.printer_mac.isnot(None))
+        .group_by(name_only.c.device_id, mac_alias.device_id)
+        .cte("pairs")
+    )
+
+    stmt = (
+        select(
+            pairs.c.device_id,
+            func.min(pairs.c.target_id).label("target_id"),
+            func.min(pairs.c.shared_name).label("shared_name"),
+        )
+        .where(pairs.c.device_id != pairs.c.target_id)
+        .group_by(pairs.c.device_id)
+        # Bir nechta MAC'li qurilmaga ishora qilsa \u2014 noaniq, taklif bermaymiz.
+        .having(func.count(func.distinct(pairs.c.target_id)) == 1)
+    )
+
+    return stmt
+
+
+async def merge_suggestions(session: AsyncSession) -> list[MergeSuggestion]:
+    """`merge_suggestions_stmt()` ni bajaradi va natijani dataclass'ga o'giradi."""
+    rows = (await session.execute(merge_suggestions_stmt())).all()
+    return [
+        MergeSuggestion(
+            device_id=int(r.device_id),
+            target_id=int(r.target_id),
+            shared_name=str(r.shared_name),
+        )
+        for r in rows
+    ]
+
+
 async def _require_device(session: AsyncSession, device_id: int) -> PrinterDevice:
     device = await session.get(PrinterDevice, device_id)
     if device is None:

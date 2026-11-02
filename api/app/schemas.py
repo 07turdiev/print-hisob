@@ -557,6 +557,32 @@ class PrinterOut(BaseModel):
     )
 
 
+class PrinterMergeSuggestionOut(BaseModel):
+    """Birlashtirish taklifi: faqat nom bo'yicha aniqlangan qurilma uchun.
+
+    Server hech narsani o'zi qo'shmaydi — bu shunchaki ehtimol. Nom bir nechta
+    MAC'li qurilmaga ishora qilsa taklif berilmaydi, chunki bir modeldagi ikki
+    printer bir xil drayver nomi bilan atalgan bo'lishi mumkin.
+    """
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "examples": [{"deviceId": 16, "targetId": 9, "sharedName": "HP LaserJet M404"}]
+        }
+    )
+
+    device_id: int = Field(
+        serialization_alias="deviceId", description="Ajralib qolgan qurilma"
+    )
+    target_id: int = Field(
+        serialization_alias="targetId", description="Unga qo'shish taklif qilinayotgan qurilma"
+    )
+    shared_name: str = Field(
+        serialization_alias="sharedName",
+        description="Ikkisini bog'lagan drayver nomi — taklifning asosi",
+    )
+
+
 class PrinterNameIn(BaseModel):
     """`PUT /api/printers/{id}` tanasi."""
 

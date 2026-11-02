@@ -8,6 +8,8 @@ const props = defineProps<{
   source: PrinterStat | null
   /** Tanlash uchun barcha printerlar. */
   options: PrinterStat[]
+  /** Server taklif qilgan qurilma — ro'yxatda birinchi turadi va belgilanadi. */
+  suggestedId?: number | null
   saving?: boolean
   error?: string | null
 }>()
@@ -25,9 +27,14 @@ const numberFormat = new Intl.NumberFormat('uz-UZ')
 
 const candidates = computed(() => {
   const query = search.value.trim().toLowerCase()
-  return props.options
+  const list = props.options
     .filter((p) => p.deviceId !== null && p.deviceId !== props.source?.deviceId)
     .filter((p) => !query || p.name.toLowerCase().includes(query))
+
+  // Taklif qilingan qurilma tepada turadi — admin uni qidirib yurmasligi uchun.
+  const suggested = props.suggestedId
+  if (suggested == null) return list
+  return [...list].sort((a, b) => Number(b.deviceId === suggested) - Number(a.deviceId === suggested))
 })
 </script>
 
@@ -71,7 +78,10 @@ const candidates = computed(() => {
               @click="p.deviceId !== null && emit('select', p.deviceId)"
             >
               <span class="candidate__text">
-                <span class="candidate__name">{{ p.name }}</span>
+                <span class="candidate__name">
+                  {{ p.name }}
+                  <span v-if="p.deviceId === suggestedId" class="candidate__badge">taklif</span>
+                </span>
                 <span class="candidate__meta">
                   {{ numberFormat.format(p.pages) }} varaq
                   <template v-if="p.lastIp"> · {{ p.lastIp }}</template>
@@ -204,6 +214,17 @@ const candidates = computed(() => {
 .candidate__name {
   font-size: var(--font-size-base);
   font-weight: 600;
+}
+
+.candidate__badge {
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--color-accent);
+  color: #fff;
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  vertical-align: middle;
 }
 
 .candidate__meta {

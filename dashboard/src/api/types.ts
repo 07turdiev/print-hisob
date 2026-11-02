@@ -176,6 +176,22 @@ export interface Printer {
   aliases: PrinterAlias[]
 }
 
+/**
+ * Birlashtirish taklifi (GET /api/printers/suggestions).
+ *
+ * Bitta printer bir kompyuterda MAC bilan, boshqasida ulashilgan navbat
+ * sifatida MAC'siz ko'rinadi — shunda reyestrda ikki qator bo'lib qoladi.
+ * Server ikkisini o'zi qo'shmaydi: faqat taklif qiladi, admin tasdiqlaydi.
+ */
+export interface PrinterMergeSuggestion {
+  /** Ajralib qolgan qurilma. */
+  deviceId: number
+  /** Unga qo'shish taklif qilinayotgan qurilma. */
+  targetId: number
+  /** Ikkisini bog'lagan drayver nomi — taklifning asosi. */
+  sharedName: string
+}
+
 // --- Departments ---------------------------------------------------------
 
 export interface DepartmentStat {

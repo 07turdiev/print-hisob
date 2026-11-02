@@ -11,7 +11,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth import USER_UNAUTHORIZED_RESPONSE, require_user
 from app.db import get_session
 from app.models import PrinterAlias, PrinterDevice
-from app.schemas import PrinterAliasOut, PrinterMergeIn, PrinterNameIn, PrinterOut
+from app.schemas import (
+    PrinterAliasOut,
+    PrinterMergeIn,
+    PrinterMergeSuggestionOut,
+    PrinterNameIn,
+    PrinterOut,
+)
 from app.services import printers
 
 router = APIRouter(tags=["printers"], dependencies=[Security(require_user)])
@@ -46,6 +52,32 @@ def _to_out(device: PrinterDevice, aliases: list[PrinterAlias]) -> PrinterOut:
 async def list_printers(session: AsyncSession = Depends(get_session)) -> list[PrinterOut]:
     rows = await printers.list_devices(session)
     return [_to_out(device, aliases) for device, aliases in rows]
+
+
+@router.get(
+    "/api/printers/suggestions",
+    response_model=list[PrinterMergeSuggestionOut],
+    summary="Birlashtirish takliflari",
+    response_description="Ehtimoliy bir xil printerlar juftligi",
+    responses=USER_UNAUTHORIZED_RESPONSE,
+)
+async def list_merge_suggestions(
+    session: AsyncSession = Depends(get_session),
+) -> list[PrinterMergeSuggestionOut]:
+    """Faqat drayver nomi bo'yicha ajralib qolgan qurilmalarga mos juftni topadi.
+
+    Bitta printer bir kompyuterda MAC bilan, boshqasida ulashilgan navbat
+    sifatida MAC'siz ko'rinadi — shunda u reyestrda ikki qator bo'lib qoladi.
+    Agar aynan bir drayver nomi ikki tomonda ham uchrasa, bu juft taklif
+    qilinadi. Hech narsa o'zgarmaydi: birlashtirishni admin bosadi.
+    """
+    rows = await printers.merge_suggestions(session)
+    return [
+        PrinterMergeSuggestionOut(
+            device_id=r.device_id, target_id=r.target_id, shared_name=r.shared_name
+        )
+        for r in rows
+    ]
 
 
 @router.put(

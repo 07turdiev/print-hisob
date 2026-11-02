@@ -1,13 +1,23 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import type { PrinterStat } from '../api/types'
+import type { PrinterRow } from '../composables/usePrintersPage'
 import { usePrintersPage } from '../composables/usePrintersPage'
 import NamedBarChart from '../components/NamedBarChart.vue'
 import AppIcon from '../components/AppIcon.vue'
 import MergePrinterDialog from '../components/MergePrinterDialog.vue'
 
-const { printers, chartItems, loading, error, savingId, rowErrors, rename, merge } =
-  usePrintersPage()
+const {
+  printers,
+  chartItems,
+  loading,
+  error,
+  savingId,
+  rowErrors,
+  suggestionCount,
+  nameOf,
+  rename,
+  merge,
+} = usePrintersPage()
 
 const numberFormat = new Intl.NumberFormat('uz-UZ')
 const fmt = (n: number) => numberFormat.format(n)
@@ -20,7 +30,7 @@ function successPercent(rate: number): string {
 const editingId = ref<number | null>(null)
 const editValue = ref('')
 
-function startEdit(printer: PrinterStat) {
+function startEdit(printer: PrinterRow) {
   if (printer.deviceId === null) return
   editingId.value = printer.deviceId
   editValue.value = printer.name
@@ -40,10 +50,13 @@ async function confirmEdit(deviceId: number) {
 }
 
 // --- Birlashtirish ---
-const mergeSource = ref<PrinterStat | null>(null)
+const mergeSource = ref<PrinterRow | null>(null)
+/** Taklifdan kelgan bo'lsa shu qurilma oynada birinchi turadi. */
+const mergeSuggestedId = ref<number | null>(null)
 
-function startMerge(printer: PrinterStat) {
+function startMerge(printer: PrinterRow, suggestedId: number | null = null) {
   mergeSource.value = printer
+  mergeSuggestedId.value = suggestedId
 }
 
 async function confirmMerge(targetId: number) {
@@ -76,6 +89,14 @@ function mergeError(): string | null {
         Bitta printer turli kompyuterlarda har xil nom bilan ko'rinishi mumkin. Tizim ularni
         MAC yoki IP bo'yicha birlashtiradi; baribir ikki qator bo'lib qolsa, birlashtirish
         tugmasidan foydalaning.
+      </span>
+    </p>
+
+    <p v-if="suggestionCount" class="alert alert--warning">
+      <span class="alert__icon"><AppIcon name="link" :size="16" /></span>
+      <span>
+        {{ suggestionCount }} ta qatorda ehtimoliy juft topildi — ular bir xil drayver nomi
+        bilan kelgan. Taklif qator ostida ko'rsatilgan; birlashtirishni o'zingiz tasdiqlaysiz.
       </span>
     </p>
 
@@ -149,6 +170,24 @@ function mergeError(): string | null {
                   <span v-if="!p.mac && !p.lastIp" class="muted">nom bo'yicha aniqlangan</span>
                 </div>
 
+                <p v-if="p.suggestion" class="suggest">
+                  <AppIcon name="link" :size="13" class="suggest__icon" />
+                  <span>
+                    Ehtimol <strong>{{ nameOf(p.suggestion.targetId) }}</strong> bilan bir xil
+                    printer — ikkisi ham
+                    <span class="suggest__name">{{ p.suggestion.sharedName }}</span>
+                    nomi bilan kelgan.
+                  </span>
+                  <button
+                    type="button"
+                    class="suggest__btn"
+                    :disabled="savingId === p.deviceId"
+                    @click="startMerge(p, p.suggestion.targetId)"
+                  >
+                    Ko'rib chiqish
+                  </button>
+                </p>
+
                 <p v-if="p.deviceId !== null && rowErrors[p.deviceId]" class="row-error">
                   {{ rowErrors[p.deviceId] }}
                 </p>
@@ -196,6 +235,7 @@ function mergeError(): string | null {
     <MergePrinterDialog
       :source="mergeSource"
       :options="printers"
+      :suggested-id="mergeSuggestedId"
       :saving="savingId !== null"
       :error="mergeError()"
       @select="confirmMerge"
@@ -242,6 +282,59 @@ function mergeError(): string | null {
   margin-top: 4px;
   color: var(--color-danger-fg);
   font-size: var(--font-size-xs);
+}
+
+.suggest {
+  display: flex;
+  align-items: flex-start;
+  gap: 5px;
+  margin-top: 5px;
+  padding: 4px 7px;
+  border-left: 2px solid var(--color-accent);
+  background: var(--color-accent-soft-bg);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+  line-height: 1.45;
+}
+
+.suggest__icon {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: var(--color-accent);
+}
+
+.suggest strong {
+  color: var(--color-text);
+}
+
+.suggest__name {
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text);
+}
+
+.suggest__btn {
+  flex-shrink: 0;
+  margin-left: auto;
+  padding: 2px 8px;
+  border: 1px solid var(--color-accent);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-accent);
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  white-space: nowrap;
+  transition: background-color var(--transition);
+}
+
+.suggest__btn:hover:not(:disabled) {
+  background: var(--color-accent);
+  color: #fff;
+}
+
+.suggest__btn:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 
 .icon-btn--ok:hover:not(:disabled) {

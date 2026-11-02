@@ -193,3 +193,52 @@ def test_ip_match_without_mac_in_job_is_kept():
 
     got = asyncio.run(_find([9], _job(ip="192.168.1.50")))
     assert got == 9
+
+
+# ---------------------------------------------------------------------------
+# Birlashtirish takliflari
+# ---------------------------------------------------------------------------
+
+
+def test_suggestions_endpoint_builds_without_error(client):
+    r = client.get("/api/printers/suggestions")
+    assert r.status_code == 200
+    assert r.json() == []
+
+
+def test_suggestions_without_bearer_rejected():
+    with TestClient(app) as c:
+        r = c.get("/api/printers/suggestions")
+    assert r.status_code == 401
+
+
+def test_suggestion_sql_only_looks_at_name_only_devices():
+    """Taklif faqat MAC/IP nishoni bo'lmagan qurilmalar uchun hisoblanadi.
+
+    MAC yoki IP bor qurilma allaqachon ishonchli aniqlangan \u2014 uni drayver nomi
+    asosida boshqasiga qo'shishni taklif qilish xato bo'lardi.
+    """
+    from sqlalchemy.dialects import postgresql
+
+    from app.services.printers import merge_suggestions_stmt
+
+    sql = str(merge_suggestions_stmt().compile(dialect=postgresql.dialect()))
+    assert "NOT (EXISTS" in sql
+    assert "printer_aliases_2.kind IN" in sql
+
+
+def test_suggestion_sql_requires_exactly_one_candidate():
+    """Nom bir nechta MAC'li qurilmaga ishora qilsa taklif berilmaydi.
+
+    Bir modeldagi ikki printer bir xil drayver nomi bilan atalgan bo'lishi
+    mumkin. Noto'g'ri birlashtirilgan tarixni ajratib bo'lmaydi, shuning uchun
+    noaniq holatda jim turamiz.
+    """
+    from sqlalchemy.dialects import postgresql
+
+    from app.services.printers import merge_suggestions_stmt
+
+    sql = str(merge_suggestions_stmt().compile(dialect=postgresql.dialect()))
+    assert "HAVING count(distinct(pairs.target_id))" in sql
+    # Bog'lanish aynan drayver nomi bo'yicha: taklifning yagona asosi shu.
+    assert "print_jobs.printer = name_only.name" in sql
