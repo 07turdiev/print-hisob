@@ -19,12 +19,12 @@
 # o'qigani uchun ishlash davomida fayl almashsa adashib ketardi.
 
 set -uo pipefail
-umask 077
 
 APP_DIR="${APP_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 BACKUP_ROOT="${BACKUP_ROOT:-$HOME/print-hisob-backups}"
 SERVICE="${SERVICE:-printer-hisob-api}"
 HEALTH_URL="${HEALTH_URL:-http://127.0.0.1:8000/health}"
+DASHBOARD_HOST="${DASHBOARD_HOST:-print.madaniyhayot.uz}"
 
 # Serverda `npm install` lock faylga Linux paketlarini qo'shadi, shu o'zgarishga ruxsat bor.
 LOCK_FILE="dashboard/package-lock.json"
@@ -97,7 +97,9 @@ restart_and_check() {
   for _ in $(seq 1 30); do
     if curl -fsS -m 2 "$HEALTH_URL" 2>/dev/null | grep -q '"status":"ok"'; then
       sleep 3
-      systemctl is-active --quiet "$SERVICE"
+      systemctl is-active --quiet "$SERVICE" || return 1
+      # API ishlashi yetarli emas: dashboard fayllarini nginx o'qiy olishi ham kerak.
+      curl -fsS -m 5 -o /dev/null -H "Host: $DASHBOARD_HOST" http://127.0.0.1/
       return
     fi
     sleep 1
@@ -160,7 +162,7 @@ main() {
   done
 
   cd "$APP_DIR" || die "$APP_DIR topilmadi"
-  mkdir -p "$BACKUP_ROOT"
+  (umask 077 && mkdir -p "$BACKUP_ROOT")
   exec 9>"$BACKUP_ROOT/deploy.lock"
   flock -n 9 || die "boshqa deploy ishlayapti"
 
@@ -191,7 +193,7 @@ $dirty"
   DIST_BACKUP="$BACKUP_ROOT/dist-before-deploy.tgz"
   rm -f "$DIST_BACKUP"
   if [ -d dashboard/dist ]; then
-    tar -czf "$DIST_BACKUP" -C dashboard dist || die "dashboard zaxirasi olinmadi"
+    (umask 077 && tar -czf "$DIST_BACKUP" -C dashboard dist) || die "dashboard zaxirasi olinmadi"
   fi
 
   say "Kod: ${PREV:0:7} -> ${TARGET:0:7}"

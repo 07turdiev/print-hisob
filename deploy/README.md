@@ -92,7 +92,7 @@ cd /home/user/print-hisob && git fetch && bash deploy/deploy.sh
 ```
 
 Skript shu tartibda ishlaydi: baza zaxirasi, kod, kutubxonalar, migratsiya, dashboard,
-xizmatni qayta ishga tushirish, `/health` tekshiruvi. Biror qadam o'tmasa kod va dashboard
+xizmatni qayta ishga tushirish, `/health` va dashboard tekshiruvi. Biror qadam o'tmasa kod va dashboard
 avvalgi holatiga qaytadi. Natijalar `~/print-hisob-backups/deploy.log` da yoziladi.
 
 - Serverda fayllarni qo'lda o'zgartirmang. Commit qilinmagan o'zgarish bo'lsa skript
