@@ -2,6 +2,7 @@ import { computed, reactive, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import {
   ApiError,
+  getPrinterAccess,
   getPrinterStats,
   getPrinterSuggestions,
   mergePrinters,
@@ -41,6 +42,10 @@ export function usePrintersPage() {
 
   const suggestions = ref<PrinterMergeSuggestion[]>([])
 
+  /** Umumiy printerlar alohida ko'rinadi, qolganlari bitta qatorga yig'iladi. */
+  const publicIds = ref<Set<number>>(new Set())
+  const showOthers = ref(false)
+
   async function reload() {
     loading.value = true
     error.value = null
@@ -69,8 +74,19 @@ export function usePrintersPage() {
     }
   }
 
+  /** Ro'yxat kelmasa sahifa avvalgidek barcha printerlarni ko'rsatadi. */
+  async function reloadPublicIds() {
+    try {
+      const access = await getPrinterAccess()
+      publicIds.value = new Set(access.publicDeviceIds)
+    } catch {
+      publicIds.value = new Set()
+    }
+  }
+
   watch([periodType, year, periodNo], reload, { immediate: true })
   reloadSuggestions()
+  reloadPublicIds()
 
   /** `deviceId` -> taklif, qatorlarga ulash uchun. */
   const byDevice = computed(() => {
@@ -88,7 +104,45 @@ export function usePrintersPage() {
       })),
   )
 
-  const chartItems = computed(() => sorted.value.map((p) => ({ name: p.name, value: p.pages })))
+  function isPublic(p: PrinterStat): boolean {
+    return p.deviceId !== null && publicIds.value.has(p.deviceId)
+  }
+
+  const publicRows = computed(() => sorted.value.filter(isPublic))
+  const otherRows = computed(() => sorted.value.filter((p) => !isPublic(p)))
+
+  /** Umumiy ro'yxat bo'lmasa yoki boshqa printer qolmasa, yig'adigan narsa yo'q. */
+  const canGroup = computed(() => publicIds.value.size > 0 && otherRows.value.length > 0)
+
+  const others = computed(() => {
+    const pages = otherRows.value.reduce((sum, p) => sum + p.pages, 0)
+    const jobs = otherRows.value.reduce((sum, p) => sum + p.jobs, 0)
+    const failedJobs = otherRows.value.reduce((sum, p) => sum + p.failedJobs, 0)
+    return {
+      count: otherRows.value.length,
+      pages,
+      jobs,
+      failedJobs,
+      successRate: jobs ? (jobs - failedJobs) / jobs : 0,
+    }
+  })
+
+  const visibleRows = computed(() =>
+    canGroup.value && !showOthers.value
+      ? publicRows.value
+      : [...publicRows.value, ...otherRows.value],
+  )
+
+  const chartItems = computed(() => {
+    const items = visibleRows.value.map((p) => ({ name: p.name, value: p.pages }))
+    if (canGroup.value && !showOthers.value) {
+      items.push({
+        name: `Boshqa printerlar (${others.value.count} ta)`,
+        value: others.value.pages,
+      })
+    }
+    return items
+  })
 
   /** Taklifda ko'rsatilgan qurilmaning ko'rinadigan nomi (jadvaldan olinadi). */
   function nameOf(deviceId: number): string {
@@ -129,7 +183,7 @@ export function usePrintersPage() {
     delete rowErrors[sourceId]
     try {
       await mergePrinters(targetId, sourceId)
-      await Promise.all([reload(), reloadSuggestions()])
+      await Promise.all([reload(), reloadSuggestions(), reloadPublicIds()])
     } catch (err) {
       rowErrors[sourceId] = describe(err, "Printerlarni birlashtirib bo'lmadi")
       throw err
@@ -140,6 +194,10 @@ export function usePrintersPage() {
 
   return {
     printers: sorted,
+    visibleRows,
+    others,
+    canGroup,
+    showOthers,
     chartItems,
     loading,
     error,

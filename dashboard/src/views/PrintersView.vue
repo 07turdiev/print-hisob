@@ -8,6 +8,10 @@ import MergePrinterDialog from '../components/MergePrinterDialog.vue'
 
 const {
   printers,
+  visibleRows,
+  others,
+  canGroup,
+  showOthers,
   chartItems,
   loading,
   error,
@@ -88,7 +92,8 @@ function mergeError(): string | null {
       <span>
         Bitta printer turli kompyuterlarda har xil nom bilan ko'rinishi mumkin. Tizim ularni
         MAC yoki IP bo'yicha birlashtiradi; baribir ikki qator bo'lib qolsa, birlashtirish
-        tugmasidan foydalaning.
+        tugmasidan foydalaning. Virtual printerlar (PDF, OneNote va boshqalar) qog'oz
+        sarflamagani uchun bu yerda ko'rsatilmaydi.
       </span>
     </p>
 
@@ -105,7 +110,13 @@ function mergeError(): string | null {
       icon="printers"
       :items="chartItems"
       value-label="Varaq"
-    />
+    >
+      <template v-if="canGroup" #actions>
+        <button type="button" class="btn btn-ghost btn-sm" @click="showOthers = !showOthers">
+          {{ showOthers ? "Boshqa printerlarni yig'ish" : "Boshqa printerlarni ko'rsatish" }}
+        </button>
+      </template>
+    </NamedBarChart>
 
     <section class="panel">
       <header class="panel__head">
@@ -130,7 +141,7 @@ function mergeError(): string | null {
             </tr>
           </thead>
           <tbody>
-            <tr v-for="(p, i) in printers" :key="p.deviceId ?? p.name">
+            <tr v-for="(p, i) in visibleRows" :key="p.deviceId ?? p.name">
               <td class="col-num">{{ i + 1 }}</td>
 
               <td>
@@ -224,6 +235,25 @@ function mergeError(): string | null {
               </td>
             </tr>
 
+            <tr v-if="canGroup" class="others-row">
+              <td class="col-num"></td>
+              <td>
+                <div class="strong">Boshqa printerlar</div>
+                <div class="printer-sub">
+                  {{ others.count }} ta printer, umumiy ro'yxatga kirmagan
+                </div>
+              </td>
+              <td class="num strong">{{ fmt(others.pages) }}</td>
+              <td class="num">{{ fmt(others.jobs) }}</td>
+              <td class="num">{{ successPercent(others.successRate) }}</td>
+              <td class="num">{{ fmt(others.failedJobs) }}</td>
+              <td class="col-actions">
+                <button type="button" class="suggest__btn" @click="showOthers = !showOthers">
+                  {{ showOthers ? "Yig'ish" : 'Ochish' }}
+                </button>
+              </td>
+            </tr>
+
             <tr v-if="!printers.length">
               <td colspan="7" class="empty">Ushbu davr uchun ma'lumot topilmadi</td>
             </tr>
@@ -257,6 +287,10 @@ function mergeError(): string | null {
   align-items: center;
   justify-content: center;
   gap: 2px;
+}
+
+.others-row td {
+  background: var(--color-surface-2);
 }
 
 .printer-sub {

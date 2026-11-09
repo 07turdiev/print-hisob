@@ -28,7 +28,7 @@ from dataclasses import dataclass
 from datetime import datetime
 
 from fastapi import HTTPException, status
-from sqlalchemy import String, cast, delete, func, select, update
+from sqlalchemy import String, and_, cast, delete, func, not_, or_, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
@@ -50,6 +50,10 @@ NAME = "name"
 
 # Nishon turlari ishonchlilik tartibida — qidiruv ham, yaratish ham shu tartibda.
 KINDS = (MAC, IP, NAME)
+
+# Qog'oz sarflamaydigan (faylga yoki ilovaga yozadigan) printerlar nomi.
+VIRTUAL_PRINTER_PATTERN = r"pdf|xps|onenote|evernote|fax|[фФ]акс"
+_IPV4_PATTERN = r"^\d+\.\d+\.\d+\.\d+$"
 
 
 def is_ip(value: str | None) -> bool:
@@ -118,6 +122,26 @@ def identity_expr():
     tarmog'i faqat reconcile ulgurmagan yangi yozuvlar uchun kerak.
     """
     return func.coalesce(cast(device_id_expr(), String), PrintJob.printer)
+
+
+def paper_job():
+    """Qog'ozga chiqqan yozuvlar sharti — sarf statistikasi faqat shularni oladi.
+
+    Agent virtual printerlarning (Microsoft Print to PDF va boshqalar) sahifalarini
+    ham `pages` qilib yuboradi, ular esa qog'oz sarflamaydi. Yozuvlar o'chirilmaydi:
+    jurnal va ruxsat hisoboti ularni ko'rsatishda davom etadi, chunki cheklov
+    yoqilganda virtual printer ham ruxsat ro'yxatiga bo'ysunadi.
+
+    Faqat nomga qaralmaydi: MAC yoki IP bilan kelgan yozuv tarmoqdagi haqiqiy
+    printerga tegishli, nomida "pdf" so'zi bo'lsa ham.
+    """
+    return not_(
+        and_(
+            PrintJob.printer.op("~*")(VIRTUAL_PRINTER_PATTERN),
+            PrintJob.printer_mac.is_(None),
+            or_(PrintJob.printer_ip.is_(None), PrintJob.printer_ip.op("!~")(_IPV4_PATTERN)),
+        )
+    )
 
 
 # ---------------------------------------------------------------------------

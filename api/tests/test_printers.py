@@ -6,9 +6,14 @@ guruhlash integratsion sinovda tekshiriladi \u2014 bu yerda endpointlar shakli,
 himoya va SQL tuzilishi.
 """
 
+import re
+
+import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy.dialects import postgresql
 
 from app.main import app
+from app.services.printers import VIRTUAL_PRINTER_PATTERN, paper_job
 
 PERIOD = {"period_type": "quarter", "year": 2026, "period_no": 3}
 
@@ -242,3 +247,58 @@ def test_suggestion_sql_requires_exactly_one_candidate():
     assert "HAVING count(distinct(pairs.target_id))" in sql
     # Bog'lanish aynan drayver nomi bo'yicha: taklifning yagona asosi shu.
     assert "print_jobs.printer = name_only.name" in sql
+
+
+# ---------------------------------------------------------------------------
+# Virtual printerlar qog'oz sarfiga kirmaydi
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "path", ["summary", "employees", "timeseries", "top", "printers", "departments"]
+)
+def test_consumption_excludes_virtual_printers(client, path):
+    from conftest import CAPTURED_SQL
+
+    r = client.get(f"/api/stats/{path}", params=PERIOD)
+    assert r.status_code == 200
+    page_queries = [sql for sql in CAPTURED_SQL if "sum(print_jobs.pages)" in sql]
+    assert page_queries
+    assert all("print_jobs.printer ~*" in sql for sql in page_queries)
+
+
+def test_journal_still_lists_virtual_printers(client):
+    """Jurnal hodisalar yozuvi: virtual printerga yuborilgan ish ham ko'rinadi."""
+    from conftest import CAPTURED_SQL
+
+    r = client.get("/api/print-jobs")
+    assert r.status_code == 200
+    assert not any("print_jobs.printer ~*" in sql for sql in CAPTURED_SQL)
+
+
+@pytest.mark.parametrize(
+    ("name", "virtual"),
+    [
+        ("Microsoft Print to PDF", True),
+        ("PDF-XChange 5.0 for ABBYY FineReader 14", True),
+        ("Foxit PhantomPDF Printer", True),
+        ("OneNote (Desktop)", True),
+        ("Print to Evernote", True),
+        ("Microsoft XPS Document Writer", True),
+        ("Fax", True),
+        ("Факс", True),
+        ("Canon MF3010", False),
+        ("Canon Generic Plus PCL6", False),
+        ("EPSON L805 Series", False),
+        ("kichkina printer", False),
+    ],
+)
+def test_virtual_printer_names(name, virtual):
+    assert bool(re.search(VIRTUAL_PRINTER_PATTERN, name, re.IGNORECASE)) is virtual
+
+
+def test_network_printer_is_never_virtual():
+    """Nomida "pdf" bo'lsa ham, MAC yoki IP bilan kelgan yozuv qog'ozga chiqqan."""
+    sql = str(paper_job().compile(dialect=postgresql.dialect()))
+    assert "print_jobs.printer_mac IS NULL" in sql
+    assert "print_jobs.printer_ip IS NULL" in sql

@@ -34,7 +34,7 @@ from app.config import settings
 from app.logins import SQL_DOMAIN_PREFIX_PATTERN, normalize_login
 from app.models import AgentQuotaState, PrintJob
 from app.periods import Period, PeriodType, current_period, period_key
-from app.services import printer_groups, user_overrides
+from app.services import printer_groups, printers, user_overrides
 from app.schemas import QuotaLimitOut, QuotaSyncIn, QuotaSyncOut
 
 # Bitta INSERT'dagi qatorlar soni (Postgres parametr chegarasi uchun).
@@ -68,12 +68,17 @@ async def _usage_by_login(session: AsyncSession, period: Period) -> dict[str, in
 
     Sarf har doim `SUM(pages)` — `pages` allaqachon jismoniy varaq soni
     (agent duplex hisobini o'zi qilib yuboradi), shuning uchun serverda
-    qo'shimcha bo'lish/yaxlitlash qilinmaydi.
+    qo'shimcha bo'lish/yaxlitlash qilinmaydi. Virtual printerlar hisoblanmaydi,
+    aks holda agentdagi raqam dashboarddagi sarfdan farq qilardi.
     """
     login = _normalized_login_expr().label("login")
     stmt = (
         select(login, func.coalesce(func.sum(PrintJob.pages), 0).label("used"))
-        .where(PrintJob.printed_at >= period.start, PrintJob.printed_at < period.end)
+        .where(
+            PrintJob.printed_at >= period.start,
+            PrintJob.printed_at < period.end,
+            printers.paper_job(),
+        )
         .group_by(login)
     )
     rows = (await session.execute(stmt)).all()

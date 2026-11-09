@@ -127,7 +127,8 @@ Ish stantsiyalaridagi agentlardan chop etish hodisalarini qabul qilib PostgreSQL
 * **Qog'oz sarfi (varaq).** `pages` — jismoniy qog'oz (varaq) soni; agent duplex
   hisobini o'zi qilib, tayyor holda yuboradi (masalan 3 sahifali duplex hujjat
   uchun `pages=2`). Statistikada sarf har doim `SUM(pages)` bilan hisoblanadi —
-  serverda qo'shimcha yaxlitlash/bo'lish qilinmaydi. `documentPages` — fayldagi
+  serverda qo'shimcha yaxlitlash/bo'lish qilinmaydi. Virtual printerlar (PDF, XPS,
+  OneNote, faks) qog'oz sarflamagani uchun sarfga kirmaydi. `documentPages` — fayldagi
   sahifalar soni (varaq emas), faqat ma'lumot uchun saqlanadi. `duplex` — ikki
   tomonlama chop etilganmi, shuningdek faqat ma'lumot uchun (allaqachon
   `pages`da hisobga olingan).
@@ -970,7 +971,11 @@ async def stats_summary(
             func.sum(case((PrintJob.success.is_(True), 1), else_=0)), 0
         ).label("success_jobs"),
         func.count(func.distinct(PrintJob.printer)).label("active_printers"),
-    ).where(PrintJob.printed_at >= period.start, PrintJob.printed_at < period.end)
+    ).where(
+        PrintJob.printed_at >= period.start,
+        PrintJob.printed_at < period.end,
+        printer_registry.paper_job(),
+    )
 
     scope = _employee_scope_clause(department)
     if scope is not None:
@@ -1041,7 +1046,11 @@ async def _employee_stats_rows(
     # qo'llanadi (0 emas) — pastda `func.coalesce` shuni ta'minlaydi (faqat
     # qator umuman yo'qligida ishga tushadi, saqlangan 0 qiymatga tegmaydi).
     default_allocated = default_quota_for(period.period_type)
-    period_filter = (PrintJob.printed_at >= period.start, PrintJob.printed_at < period.end)
+    period_filter = (
+        PrintJob.printed_at >= period.start,
+        PrintJob.printed_at < period.end,
+        printer_registry.paper_job(),
+    )
     norm_login = func.lower(func.regexp_replace(PrintJob.user_name, SQL_DOMAIN_PREFIX_PATTERN, ""))
 
     # 1) Davrda har bir xodimning **o'z** sarfi.
@@ -1248,7 +1257,11 @@ async def stats_timeseries(
             func.coalesce(func.sum(PrintJob.pages), 0).label("pages"),
             func.count().label("jobs"),
         )
-        .where(PrintJob.printed_at >= period.start, PrintJob.printed_at < period.end)
+        .where(
+            PrintJob.printed_at >= period.start,
+            PrintJob.printed_at < period.end,
+            printer_registry.paper_job(),
+        )
         .group_by(bucket)
         .order_by(bucket)
     )
@@ -1277,7 +1290,11 @@ async def stats_top(
     limit: int = Query(default=10, ge=1, le=100),
     department: str | None = Query(default=None, description="Bo'lim bo'yicha filtr (Employee jadvali orqali)"),
 ) -> TopStatsOut:
-    period_filter = (PrintJob.printed_at >= period.start, PrintJob.printed_at < period.end)
+    period_filter = (
+        PrintJob.printed_at >= period.start,
+        PrintJob.printed_at < period.end,
+        printer_registry.paper_job(),
+    )
     scope = _employee_scope_clause(department)
 
     # Printer bo'yicha qurilma identifikatoriga qarab guruhlanadi (xom drayver
@@ -1364,7 +1381,9 @@ async def stats_printers(
     ko'rilgan drayver nomi, aks holda hodisadagi xom nom, aks holda mac.
     """
     usage = _printer_usage_subquery(
-        PrintJob.printed_at >= period.start, PrintJob.printed_at < period.end
+        PrintJob.printed_at >= period.start,
+        PrintJob.printed_at < period.end,
+        printer_registry.paper_job(),
     )
     stmt = (
         select(
@@ -1516,6 +1535,7 @@ async def _department_rollup(session: AsyncSession, period: Period) -> list[Depa
             column.isnot(None),
             PrintJob.printed_at >= period.start,
             PrintJob.printed_at < period.end,
+            printer_registry.paper_job(),
         )
         .group_by(column)
         .subquery()

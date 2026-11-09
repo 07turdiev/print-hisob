@@ -68,6 +68,7 @@ const height = computed(() => `${Math.max(180, props.items.length * 30 + 46)}px`
         <span class="panel__title-icon"><AppIcon :name="icon" :size="16" /></span>
         {{ title }}
       </h2>
+      <slot name="actions" />
     </header>
 
     <div class="panel__body">
