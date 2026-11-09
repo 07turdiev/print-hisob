@@ -3,6 +3,7 @@ from datetime import datetime
 from sqlalchemy import (
     BigInteger,
     Boolean,
+    CheckConstraint,
     DateTime,
     Index,
     Integer,
@@ -356,16 +357,12 @@ class PrinterAlias(Base):
 class PrinterGroup(Base):
     r"""Xodimlar guruhi va unga biriktirilgan printer siyosati.
 
-    Uch daraja bor va ular bir-birini almashtiradi (`policy`):
+    Guruh standart qoidadan istisno, ikki daraja bor (`policy`):
 
-    * `all` \u2014 to'liq ruxsat, barcha printerlar;
-    * `allowed` \u2014 faqat `PrinterGroupPrinter` da belgilangan qurilmalar;
-    * `none` \u2014 umuman chop eta olmaydi.
+    * `all` \u2014 barcha printerlar;
+    * `allowed` \u2014 umumiy printerlar va `PrinterGroupPrinter` dagi qurilmalar.
 
-    `none` darajasi yangi mexanizm talab qilmaydi: u agentga mavjud `limit: 0`
-    orqali yetadi, ya'ni "Bloklash" tugmasi bilan bir xil kanal. `allowed` esa
-    agentdagi `allowedPrinters` qo'llanmasi chiqqandan keyin kuchga kiradi \u2014
-    shu vaqtgacha u faqat hisobotda ko'rinadi.
+    Umuman chop eta olmaslik guruh emas, `PrintUserOverride.blocked`.
     """
 
     __tablename__ = "printer_groups"
@@ -381,7 +378,10 @@ class PrinterGroup(Base):
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
 
-    __table_args__ = (UniqueConstraint("name", name="uq_printer_groups_name"),)
+    __table_args__ = (
+        UniqueConstraint("name", name="uq_printer_groups_name"),
+        CheckConstraint("policy in ('all', 'allowed')", name="ck_printer_groups_policy"),
+    )
 
 
 class PrinterGroupPrinter(Base):

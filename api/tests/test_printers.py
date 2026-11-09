@@ -13,7 +13,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy.dialects import postgresql
 
 from app.main import app
-from app.services.printers import VIRTUAL_PRINTER_PATTERN, paper_job
+from app.rules import VIRTUAL_PRINTER_PATTERN, paper_job
 
 PERIOD = {"period_type": "quarter", "year": 2026, "period_no": 3}
 

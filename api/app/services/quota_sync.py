@@ -31,10 +31,11 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.logins import SQL_DOMAIN_PREFIX_PATTERN, normalize_login
+from app.logins import login_key, normalize_login
 from app.models import AgentQuotaState, PrintJob
 from app.periods import Period, PeriodType, current_period, period_key
-from app.services import printer_groups, printers, user_overrides
+from app.rules import counted_job
+from app.services import printer_groups, user_overrides
 from app.schemas import QuotaLimitOut, QuotaSyncIn, QuotaSyncOut
 
 # Bitta INSERT'dagi qatorlar soni (Postgres parametr chegarasi uchun).
@@ -51,7 +52,7 @@ def _normalized_login_expr():
     `app.logins.normalize_login` bilan bir xil qoida: oxirgi `\` gacha bo'lgan
     qism olib tashlanadi va natija kichik harfga o'tkaziladi.
     """
-    return func.lower(func.regexp_replace(PrintJob.user_name, SQL_DOMAIN_PREFIX_PATTERN, ""))
+    return login_key(PrintJob.user_name)
 
 
 def agent_period_type() -> PeriodType:
@@ -77,7 +78,7 @@ async def _usage_by_login(session: AsyncSession, period: Period) -> dict[str, in
         .where(
             PrintJob.printed_at >= period.start,
             PrintJob.printed_at < period.end,
-            printers.paper_job(),
+            counted_job(),
         )
         .group_by(login)
     )
@@ -191,9 +192,7 @@ async def sync_quotas(session: AsyncSession, payload: QuotaSyncIn) -> QuotaSyncO
     aniq `-1` qiymati orqali yetkaziladi.
 
     Kvota bu yerda umuman qatnashmaydi: u faqat hisobot normasi. Chop etishni
-    to'sish ikki yo'l bilan bo'ladi — xodim ustidagi "Bloklash" tugmasi va
-    `policy='none'` guruhi. Ikkisi ham bir xil kanalga tushadi (`limit: 0`),
-    shuning uchun guruh orqali to'sish bugungi agentlarda ham ishlaydi.
+    to'sish xodim ustidagi "Bloklash" tugmasi bilan bo'ladi (`limit: 0`).
 
     `allowedPrinters` esa yangi: u faqat `allowedPrinters` ni biladigan agentda
     kuchga kiradi. Eski agentlar notanish maydonni e'tiborsiz qoldiradi.
@@ -210,9 +209,6 @@ async def sync_quotas(session: AsyncSession, payload: QuotaSyncIn) -> QuotaSyncO
     access = await printer_groups.default_access(session)
     default_allowed = access.allowed_printers()
     policies = await printer_groups.policy_by_login(session, public_tokens=access.tokens)
-    group_blocked = {
-        login for login, p in policies.items() if p.policy == printer_groups.NONE
-    }
 
     # Agent so'raganlar + admin tegib o'tgan barcha loginlar. Ikkinchisi faqat
     # bloklanganlar emas: blokdan chiqarilganga ham ochiq-oydin `-1` yuborilishi
@@ -230,7 +226,7 @@ async def sync_quotas(session: AsyncSession, payload: QuotaSyncIn) -> QuotaSyncO
     users: list[QuotaLimitOut] = []
     served: dict[str, QuotaLimitOut] = {}
     for login, display_name in sorted(logins.items()):
-        blocked = bool(known.get(login)) or login in group_blocked
+        blocked = bool(known.get(login))
         allowed = _allowed_for(login, policies, blocked=blocked, default=default_allowed)
         answer = QuotaLimitOut(
             # Agent nomlarni registrga sezgir bo'lmagan holda solishtiradi, shuning

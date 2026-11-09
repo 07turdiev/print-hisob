@@ -7,8 +7,11 @@ solishtiriladi — `ACME\Jane`, `jane`, `Jane` bitta odam hisoblanadi.
 Bu qoida faqat kvota almashinuviga emas, umuman login solishtirishga tegishli:
 `print_jobs.user_name` (agent hodisa jurnalidan olgan xom qiymat) va
 `employees.login` (AD sinxronizatsiyasidan kelgan qiymat) har doim shu
-funksiya orqali bir shaklga keltirilib solishtiriladi.
+funksiya orqali bir shaklga keltirilib solishtiriladi. SQL so'rovlarda buning
+o'rniga `login_key` ishlatiladi.
 """
+
+from sqlalchemy import func
 
 
 def normalize_login(raw: str | None) -> str:
@@ -25,6 +28,10 @@ def normalize_login(raw: str | None) -> str:
     return value.casefold()
 
 
-# SQL tomonda xuddi shu normallashtirishni bajaradigan ifoda uchun regex:
 # `^.*\` — oxirgi teskari chiziqqa qadar bo'lgan hamma narsa.
-SQL_DOMAIN_PREFIX_PATTERN = r"^.*\\"
+_SQL_DOMAIN_PREFIX_PATTERN = r"^.*\\"
+
+
+def login_key(column):
+    """SQL tomonda `normalize_login` bilan bir xil natija beradigan ifoda."""
+    return func.lower(func.regexp_replace(column, _SQL_DOMAIN_PREFIX_PATTERN, ""))

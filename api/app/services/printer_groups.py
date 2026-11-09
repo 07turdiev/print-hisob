@@ -7,14 +7,11 @@ Cheklov o'chiq turganda hamma avvalgidek ishlaydi.
 **Guruh — istisno.** Guruh bitta siyosatga ega bo'ladi:
 
 * `all` — barcha printerlar;
-* `allowed` — umumiy printerlar va guruhda belgilangan qurilmalar;
-* `none` — umuman chop eta olmaydi.
+* `allowed` — umumiy printerlar va guruhda belgilangan qurilmalar.
 
-**Nega shunday taqsimlangan.** `none` yangi mexanizm talab qilmaydi: agentga
-mavjud `limit: 0` orqali yetadi, ya'ni bu bugun ishlab turgan "Bloklash" bilan
-bir xil kanal. Printer ro'yxati bo'yicha cheklov esa agentdagi `allowedPrinters`
-qo'llanmasi chiqqandan keyin kuchga kiradi — shu vaqtgacha u faqat hisobotda
-ko'rinadi ("ruxsat etilmagan printerdan chiqardi").
+Umuman chop eta olmaslik guruh emas, xodimni bloklash (`print_user_overrides`).
+Printer ro'yxati bo'yicha cheklov agentdagi `allowedPrinters` qo'llanmasi
+chiqqandan keyin kuchga kiradi — shu vaqtgacha u faqat hisobotda ko'rinadi.
 
 **Bir xodim — bitta guruh.** Cheklov baza darajasida (`uq_printer_group_members_login`).
 Aks holda "bu odamga nima ruxsat etilgan" degan savolga javob guruhlarni
@@ -32,7 +29,7 @@ from fastapi import HTTPException, status
 from sqlalchemy import and_, delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.logins import SQL_DOMAIN_PREFIX_PATTERN, normalize_login
+from app.logins import login_key, normalize_login
 from app.models import (
     Employee,
     PrinterAccessSetting,
@@ -54,8 +51,7 @@ _UNPROCESSABLE = 422
 
 ALL = "all"
 ALLOWED = "allowed"
-NONE = "none"
-POLICIES = (ALL, ALLOWED, NONE)
+POLICIES = (ALL, ALLOWED)
 
 # Hisobotda guruhsiz xodimning siyosati. Guruhga berib bo'lmaydi.
 DEFAULT = "default"
@@ -390,18 +386,6 @@ async def policy_by_login(
     }
 
 
-async def blocked_logins(session: AsyncSession) -> set[str]:
-    """`policy='none'` guruhidagi loginlar — ularga `limit: 0` yuboriladi."""
-    rows = (
-        await session.execute(
-            select(PrinterGroupMember.login)
-            .join(PrinterGroup, PrinterGroup.id == PrinterGroupMember.group_id)
-            .where(PrinterGroup.policy == NONE)
-        )
-    ).scalars().all()
-    return set(rows)
-
-
 # ---------------------------------------------------------------------------
 # Yozish
 # ---------------------------------------------------------------------------
@@ -511,9 +495,8 @@ class Violation:
 def violations_stmt(start: datetime, end: datetime, *, include_default: bool):
     r"""Davr ichida ruxsat etilmagan printerdan chiqarishlar.
 
-    Qoida uch holatni qamrab oladi:
+    Qoida ikki holatni qamrab oladi:
 
-    * `policy='none'` \u2014 har qanday chiqarish buzilish;
     * `policy='allowed'` \u2014 qurilma na umumiy, na guruhning ro'yxatida bo'lsa;
     * guruhsiz xodim \u2014 qurilma umumiy bo'lmasa (`include_default`).
 
@@ -529,9 +512,7 @@ def violations_stmt(start: datetime, end: datetime, *, include_default: bool):
     ular haqida hukm chiqarib bo'lmaydi.
     """
     device_id = printers.device_id_expr()
-    login_expr = func.lower(
-        func.regexp_replace(PrintJob.user_name, SQL_DOMAIN_PREFIX_PATTERN, "")
-    )
+    login_expr = login_key(PrintJob.user_name)
     # Yorliq `login` emas: so'rovda `employees.login` ustuni ham bor.
     login = login_expr.label("norm_login")
 
@@ -547,7 +528,6 @@ def violations_stmt(start: datetime, end: datetime, *, include_default: bool):
     )
 
     breaches = [
-        PrinterGroup.policy == NONE,
         and_(PrinterGroup.policy == ALLOWED, ~allowed_here, ~is_public),
     ]
     if include_default:
@@ -577,7 +557,7 @@ def violations_stmt(start: datetime, end: datetime, *, include_default: bool):
         stmt.outerjoin(PrinterDevice, PrinterDevice.id == device_id)
         .outerjoin(PrinterGroupMember, PrinterGroupMember.login == login_expr)
         .outerjoin(PrinterGroup, PrinterGroup.id == PrinterGroupMember.group_id)
-        .outerjoin(Employee, func.lower(Employee.login) == login_expr)
+        .outerjoin(Employee, login_key(Employee.login) == login_expr)
         .where(
             PrintJob.printed_at >= start,
             PrintJob.printed_at < end,

@@ -3,8 +3,17 @@ import re
 from datetime import datetime, timezone
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, StringConstraints, model_validator
+from pydantic import (
+    BaseModel,
+    BeforeValidator,
+    ConfigDict,
+    Field,
+    StringConstraints,
+    field_validator,
+    model_validator,
+)
 
+from app.logins import normalize_login
 from app.periods import PeriodType, validate_period_no
 
 
@@ -334,6 +343,14 @@ class EmployeeQuotaIn(BaseModel):
         alias="periodNo", description="Oy uchun 1..12, chorak uchun 1..4"
     )
     allocated_pages: int = Field(default=0, ge=0, alias="allocatedPages")
+
+    @field_validator("login")
+    @classmethod
+    def _normalize_login(cls, value: str) -> str:
+        login = normalize_login(value)
+        if not login:
+            raise ValueError("login bo'sh bo'lishi mumkin emas")
+        return login
 
     @model_validator(mode="after")
     def _check_period_no(self) -> "EmployeeQuotaIn":
@@ -1067,7 +1084,7 @@ class UserOverrideIn(BaseModel):
 # Xodimlar guruhlari va printer ruxsatlari
 # ---------------------------------------------------------------------------
 
-PrinterGroupPolicy = Literal["all", "allowed", "none"]
+PrinterGroupPolicy = Literal["all", "allowed"]
 
 
 class PrinterGroupOut(BaseModel):

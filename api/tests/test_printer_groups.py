@@ -56,11 +56,6 @@ def test_policy_allowed_without_printers_blocks_everything():
     assert _allowed_for("e.turdiyev", policies, blocked=False, default=["*"]) == []
 
 
-def test_policy_none_sends_empty_list():
-    policies = {"e.turdiyev": _policy(pg.NONE)}
-    assert _allowed_for("e.turdiyev", policies, blocked=False, default=PUBLIC) == []
-
-
 def test_individual_block_overrides_group_policy():
     """Shaxsiy “Bloklash” guruh ruxsatidan ustun turadi.
 
@@ -198,7 +193,7 @@ def test_violations_query_covers_ungrouped_only_when_public_list_exists():
     assert "printer_group_members.id IS NULL" not in without_default
 
 
-@pytest.mark.parametrize("policy", ["all", "allowed", "none"])
+@pytest.mark.parametrize("policy", ["all", "allowed"])
 def test_valid_policies_accepted_by_schema(policy):
     from app.schemas import PrinterGroupIn
 

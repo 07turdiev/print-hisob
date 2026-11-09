@@ -19,7 +19,9 @@ _ROWS = [
         full_name="Nosirov Sarvar Nodirovich",
         department="Ichki audit bo'limi",
         position="Bo'lim boshlig'i",
-        used=310,
+        used=300,
+        used_from_linked=10,
+        used_total=310,
         allocated=334,
         remaining=24,
         over_limit=False,
@@ -31,6 +33,7 @@ _ROWS = [
         department="Ichki audit bo'limi",
         position="Mutaxassis",
         used=50,
+        used_total=50,
         allocated=0,
         remaining=-50,
         over_limit=True,
@@ -42,6 +45,7 @@ _ROWS = [
         department=None,
         position=None,
         used=42,
+        used_total=42,
         allocated=0,
         remaining=-42,
         over_limit=True,
@@ -82,7 +86,7 @@ def test_employees_csv_unmatched_section(client, monkeypatch):
     monkeypatch.setattr(main_module, "_employee_stats_rows", AsyncMock(return_value=_ROWS))
     r = client.get("/api/stats/employees.csv", params=PERIOD)
     body = r.content.decode("utf-8")
-    assert "Noma'lum foydalanuvchilar" in body
+    assert "Noma'lum loginlar" in body
     assert "ghost1" in body
 
 

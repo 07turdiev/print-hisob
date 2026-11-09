@@ -8,7 +8,7 @@ from urllib.parse import quote
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Response, Security, status
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy import Integer, case, cast, exists, func, literal, or_, select, union, update
+from sqlalchemy import Integer, and_, case, cast, exists, func, literal, or_, select, union, update
 from sqlalchemy.orm import aliased
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -24,7 +24,7 @@ from app.auth import (
 from app.config import settings
 from app.db import Base, SessionLocal, engine, get_session
 from app.deps import period_params
-from app.logins import SQL_DOMAIN_PREFIX_PATTERN
+from app.logins import login_key, normalize_login
 from app.models import (
     AgentStatus,
     Employee,
@@ -41,6 +41,7 @@ from app.routers import (
     printers as printers_router,
     user_overrides,
 )
+from app.rules import counted_job
 from app.services import printers as printer_registry
 from app.schemas import (
     AdSyncStatusOut,
@@ -203,7 +204,7 @@ def _employee_scope_clause(department: str | None):
     """
     if not department:
         return None
-    conditions = [Employee.login == PrintJob.user_name, Employee.department == department]
+    conditions = [login_key(Employee.login) == login_key(PrintJob.user_name), Employee.department == department]
     # `correlate_except(Employee)`: `departments_stmt`da `Employee` allaqachon
     # tashqi so'rovga qo'shilgan (outerjoin) bo'lishi mumkin — shunda avtomatik
     # korrelyatsiya uni ham ichki FROM'dan olib tashlab, bo'sh subquery hosil
@@ -458,7 +459,7 @@ async def list_print_jobs(
     if computer:
         filters.append(PrintJob.computer == computer)
     if user:
-        filters.append(PrintJob.user_name == user)
+        filters.append(login_key(PrintJob.user_name) == normalize_login(user))
     if printer:
         # Qidiruv reyestrdagi qulay nomga ham tushishi kerak — foydalanuvchi jadvalda
         # ko'rgan nomni yozadi, xom drayver nomini emas.
@@ -829,17 +830,17 @@ async def agents_summary(session: AsyncSession = Depends(get_session)) -> Agents
     recently_restarted_condition = AgentStatus.agent_uptime_seconds.is_not(None) & (
         AgentStatus.agent_uptime_seconds < settings.agent_recent_restart_seconds
     )
+    is_stale = AgentStatus.reported_at < stale_cutoff
+    # Jadval bilan bir xil qoida: aloqasi yo'q agent "ishlayapti" hisoblanmaydi.
     stmt = select(
         func.count().label("total"),
         func.coalesce(
-            func.sum(case((AgentStatus.working.is_(True), 1), else_=0)), 0
+            func.sum(case((and_(AgentStatus.working.is_(True), ~is_stale), 1), else_=0)), 0
         ).label("working"),
         func.coalesce(
-            func.sum(case((AgentStatus.working.is_(False), 1), else_=0)), 0
+            func.sum(case((and_(AgentStatus.working.is_(False), ~is_stale), 1), else_=0)), 0
         ).label("not_working"),
-        func.coalesce(
-            func.sum(case((AgentStatus.reported_at < stale_cutoff, 1), else_=0)), 0
-        ).label("stale"),
+        func.coalesce(func.sum(case((is_stale, 1), else_=0)), 0).label("stale"),
         func.coalesce(
             func.sum(case((recently_restarted_condition, 1), else_=0)), 0
         ).label("recently_restarted"),
@@ -878,7 +879,7 @@ async def list_quotas(
     stmt = select(EmployeeQuota)
 
     if department:
-        stmt = stmt.join(Employee, Employee.login == EmployeeQuota.login).where(
+        stmt = stmt.join(Employee, login_key(Employee.login) == EmployeeQuota.login).where(
             Employee.department == department
         )
     if period_type:
@@ -888,7 +889,7 @@ async def list_quotas(
     if period_no:
         stmt = stmt.where(EmployeeQuota.period_no == period_no)
     if login:
-        stmt = stmt.where(EmployeeQuota.login == login)
+        stmt = stmt.where(EmployeeQuota.login == normalize_login(login))
 
     stmt = stmt.order_by(
         EmployeeQuota.year.desc(), EmployeeQuota.period_no, EmployeeQuota.login
@@ -936,7 +937,7 @@ async def upsert_quotas(
             stmt = (
                 stmt.on_conflict_do_update(
                     constraint="uq_employee_quotas_period",
-                    set_={"allocated_pages": stmt.excluded.allocated_pages},
+                    set_={"allocated_pages": stmt.excluded.allocated_pages, "updated_at": func.now()},
                 )
                 .returning(EmployeeQuota)
             )
@@ -964,17 +965,20 @@ async def stats_summary(
     period: Period = Depends(period_params),
     department: str | None = Query(default=None, description="Bo'lim bo'yicha filtr (Employee jadvali orqali)"),
 ) -> StatsSummaryOut:
-    stmt = select(
-        func.coalesce(func.sum(PrintJob.pages), 0).label("total_pages"),
-        func.count().label("total_jobs"),
-        func.coalesce(
-            func.sum(case((PrintJob.success.is_(True), 1), else_=0)), 0
-        ).label("success_jobs"),
-        func.count(func.distinct(PrintJob.printer)).label("active_printers"),
+    stmt = printer_registry.join_device(
+        select(
+            func.coalesce(func.sum(PrintJob.pages), 0).label("total_pages"),
+            func.count().label("total_jobs"),
+            func.coalesce(
+                func.sum(case((PrintJob.success.is_(True), 1), else_=0)), 0
+            ).label("success_jobs"),
+            # Drayver nomlari emas, reyestrdagi jismoniy printerlar sanaladi.
+            func.count(func.distinct(printer_registry.identity_expr())).label("active_printers"),
+        ).select_from(PrintJob)
     ).where(
         PrintJob.printed_at >= period.start,
         PrintJob.printed_at < period.end,
-        printer_registry.paper_job(),
+        counted_job(),
     )
 
     scope = _employee_scope_clause(department)
@@ -1049,9 +1053,9 @@ async def _employee_stats_rows(
     period_filter = (
         PrintJob.printed_at >= period.start,
         PrintJob.printed_at < period.end,
-        printer_registry.paper_job(),
+        counted_job(),
     )
-    norm_login = func.lower(func.regexp_replace(PrintJob.user_name, SQL_DOMAIN_PREFIX_PATTERN, ""))
+    norm_login = login_key(PrintJob.user_name)
 
     # 1) Davrda har bir xodimning **o'z** sarfi.
     usage = (
@@ -1108,10 +1112,10 @@ async def _employee_stats_rows(
         .select_from(identities)
         .outerjoin(usage, usage.c.login == identities.c.login)
         .outerjoin(linked, linked.c.owner == identities.c.login)
-        .outerjoin(Employee, func.lower(Employee.login) == identities.c.login)
+        .outerjoin(Employee, login_key(Employee.login) == identities.c.login)
         .outerjoin(
             EmployeeQuota,
-            (func.lower(EmployeeQuota.login) == identities.c.login)
+            (EmployeeQuota.login == identities.c.login)
             & (EmployeeQuota.period_type == period.period_type)
             & (EmployeeQuota.year == period.year)
             & (EmployeeQuota.period_no == period.period_no),
@@ -1157,7 +1161,7 @@ async def _employee_stats_rows(
     return results
 
 
-UNMATCHED_SECTION_LABEL = "Noma'lum foydalanuvchilar"
+UNMATCHED_SECTION_LABEL = "Noma'lum loginlar"
 
 
 @app.get(
@@ -1175,6 +1179,10 @@ async def stats_employees_csv(
 ) -> Response:
     """Mijoz talab qilgan KPI hisoboti formatida CSV: bo'lim sarlavhasi, so'ng
     har bir xodim uchun T/r, F.I.SH., lavozim, davr kvotasi va sarfi.
+
+    Sarf `used_total`: xodimning o'zi chiqargani va unga biriktirilganlarniki.
+    Biriktirilgan xodimning o'z qatorida ham uning sarfi turadi, shuning uchun
+    ustunni qo'shib chiqilsa biriktirilgan varaqlar ikki marta sanaladi.
 
     Raqamlar `/api/stats/employees` bilan bir xil SQL agregatsiyasidan olinadi
     (`_employee_stats_rows`) — faqat chiqish formati boshqacha (bo'lim bo'yicha
@@ -1207,14 +1215,14 @@ async def stats_employees_csv(
         writer.writerow([dept_name, "", "", "", ""])
         for idx, row in enumerate(sorted(by_department[dept_name], key=_sort_key), start=1):
             writer.writerow(
-                [idx, row.full_name or row.login, row.position or "", row.allocated, row.used]
+                [idx, row.full_name or row.login, row.position or "", row.allocated, row.used_total]
             )
 
     if unmatched:
         writer.writerow([UNMATCHED_SECTION_LABEL, "", "", "", ""])
         for idx, row in enumerate(sorted(unmatched, key=_sort_key), start=1):
             writer.writerow(
-                [idx, row.full_name or row.login, row.position or "", row.allocated, row.used]
+                [idx, row.full_name or row.login, row.position or "", row.allocated, row.used_total]
             )
 
     # Excel'da o'zbekcha (lotin, apostrof bilan) harflar to'g'ri ochilishi uchun
@@ -1260,7 +1268,7 @@ async def stats_timeseries(
         .where(
             PrintJob.printed_at >= period.start,
             PrintJob.printed_at < period.end,
-            printer_registry.paper_job(),
+            counted_job(),
         )
         .group_by(bucket)
         .order_by(bucket)
@@ -1293,7 +1301,7 @@ async def stats_top(
     period_filter = (
         PrintJob.printed_at >= period.start,
         PrintJob.printed_at < period.end,
-        printer_registry.paper_job(),
+        counted_job(),
     )
     scope = _employee_scope_clause(department)
 
@@ -1334,7 +1342,7 @@ async def stats_top(
             func.count().label("jobs"),
         )
         .select_from(PrintJob)
-        .outerjoin(Employee, Employee.login == PrintJob.user_name)
+        .outerjoin(Employee, login_key(Employee.login) == login_key(PrintJob.user_name))
         .where(*period_filter)
         .group_by(department_label)
         .order_by(func.sum(PrintJob.pages).desc())
@@ -1383,7 +1391,7 @@ async def stats_printers(
     usage = _printer_usage_subquery(
         PrintJob.printed_at >= period.start,
         PrintJob.printed_at < period.end,
-        printer_registry.paper_job(),
+        counted_job(),
     )
     stmt = (
         select(
@@ -1505,7 +1513,7 @@ async def _department_rollup(session: AsyncSession, period: Period) -> list[Depa
         .select_from(Employee)
         .outerjoin(
             EmployeeQuota,
-            (EmployeeQuota.login == Employee.login)
+            (EmployeeQuota.login == login_key(Employee.login))
             & (EmployeeQuota.period_type == period.period_type)
             & (EmployeeQuota.year == period.year)
             & (EmployeeQuota.period_no == period.period_no),
@@ -1530,12 +1538,12 @@ async def _department_rollup(session: AsyncSession, period: Period) -> list[Depa
             func.count().label("jobs"),
         )
         .select_from(PrintJob)
-        .join(Employee, Employee.login == PrintJob.user_name)
+        .join(Employee, login_key(Employee.login) == login_key(PrintJob.user_name))
         .where(
             column.isnot(None),
             PrintJob.printed_at >= period.start,
             PrintJob.printed_at < period.end,
-            printer_registry.paper_job(),
+            counted_job(),
         )
         .group_by(column)
         .subquery()

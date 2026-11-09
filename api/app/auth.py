@@ -63,8 +63,9 @@ async def require_api_key(key: str | None = Security(api_key_header)) -> None:
 
 def verify_credentials(username: str, password: str) -> bool:
     """Login/parolni `.env`dagi qiymatlar bilan doimiy vaqtda (constant-time) solishtiradi."""
-    username_ok = hmac.compare_digest(username, settings.auth_username)
-    password_ok = hmac.compare_digest(password, settings.auth_password)
+    # Baytlarda: `compare_digest` lotin bo'lmagan `str` uchun xato beradi.
+    username_ok = hmac.compare_digest(username.encode(), settings.auth_username.encode())
+    password_ok = hmac.compare_digest(password.encode(), settings.auth_password.encode())
     return username_ok and password_ok
 
 

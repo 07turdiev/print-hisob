@@ -28,7 +28,7 @@ from dataclasses import dataclass
 from datetime import datetime
 
 from fastapi import HTTPException, status
-from sqlalchemy import String, and_, cast, delete, func, not_, or_, select, update
+from sqlalchemy import String, case, cast, delete, func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
@@ -50,10 +50,6 @@ NAME = "name"
 
 # Nishon turlari ishonchlilik tartibida — qidiruv ham, yaratish ham shu tartibda.
 KINDS = (MAC, IP, NAME)
-
-# Qog'oz sarflamaydigan (faylga yoki ilovaga yozadigan) printerlar nomi.
-VIRTUAL_PRINTER_PATTERN = r"pdf|xps|onenote|evernote|fax|[фФ]акс"
-_IPV4_PATTERN = r"^\d+\.\d+\.\d+\.\d+$"
 
 
 def is_ip(value: str | None) -> bool:
@@ -124,26 +120,6 @@ def identity_expr():
     return func.coalesce(cast(device_id_expr(), String), PrintJob.printer)
 
 
-def paper_job():
-    """Qog'ozga chiqqan yozuvlar sharti — sarf statistikasi faqat shularni oladi.
-
-    Agent virtual printerlarning (Microsoft Print to PDF va boshqalar) sahifalarini
-    ham `pages` qilib yuboradi, ular esa qog'oz sarflamaydi. Yozuvlar o'chirilmaydi:
-    jurnal va ruxsat hisoboti ularni ko'rsatishda davom etadi, chunki cheklov
-    yoqilganda virtual printer ham ruxsat ro'yxatiga bo'ysunadi.
-
-    Faqat nomga qaralmaydi: MAC yoki IP bilan kelgan yozuv tarmoqdagi haqiqiy
-    printerga tegishli, nomida "pdf" so'zi bo'lsa ham.
-    """
-    return not_(
-        and_(
-            PrintJob.printer.op("~*")(VIRTUAL_PRINTER_PATTERN),
-            PrintJob.printer_mac.is_(None),
-            or_(PrintJob.printer_ip.is_(None), PrintJob.printer_ip.op("!~")(_IPV4_PATTERN)),
-        )
-    )
-
-
 # ---------------------------------------------------------------------------
 # Nishonlarni yozish
 # ---------------------------------------------------------------------------
@@ -182,7 +158,10 @@ async def _find_device(session: AsyncSession, job: JobPrinter) -> int | None:
         candidates.append((MAC, job.mac))
     if is_ip(job.ip):
         candidates.append((IP, job.ip or ""))
-    candidates.append((NAME, job.name))
+    # Nom faqat MAC ham, IP ham bo'lmaganda: tarmoq printeri bir xil drayver nomli
+    # USB printerga qo'shilib ketmasligi kerak.
+    if not candidates:
+        candidates.append((NAME, job.name))
 
     for kind, value in candidates:
         found = await session.scalar(
@@ -194,7 +173,7 @@ async def _find_device(session: AsyncSession, job: JobPrinter) -> int | None:
             continue
         device_id = int(found)
 
-        # IP yoki nom bo'yicha topildi, lekin qurilmada MAC turibdi — va u
+        # IP bo'yicha topildi, lekin qurilmada MAC turibdi — va u
         # bu yozuvning MAC'i emas (aks holda tsikl birinchi qadamda tugardi).
         # Demak IP boshqa jismoniy printerga o'tgan: DHCP manzilni qayta
         # taqsimlagan yoki printer almashtirilgan. Bu holda eski qurilmaga
@@ -250,16 +229,20 @@ async def ensure_device(session: AsyncSession, job: JobPrinter) -> int:
     if job.mac and is_ip(job.ip):
         await _claim_alias(session, device_id, IP, job.ip or "")
 
-    # `last_ip` faqat muvaffaqiyatli chop etishda yangilanadi: agentga ruxsat
-    # ro'yxatida aynan shu manzil ketadi. Kompyuterda eski IP'ga qaragan navbat
-    # qolgan bo'lsa, undagi ishlar muvaffaqiyatsiz tugaydi va joriy IP'ni
-    # o'zgartirmasligi kerak.
+    # `last_ip` faqat yangi va muvaffaqiyatli chop etishda yangilanadi: agentga
+    # ruxsat ro'yxatida aynan shu manzil ketadi. Eski IP'ga qaragan navbatdagi ish
+    # muvaffaqiyatsiz tugaydi, uzilishdan keyin qayta yuborilgan bufer esa eski
+    # bo'ladi, ikkalasi ham joriy IP'ni o'zgartirmasligi kerak.
+    next_ip = PrinterDevice.last_ip
+    if job.success and is_ip(job.ip):
+        is_newest = or_(PrinterDevice.last_seen.is_(None), PrinterDevice.last_seen <= job.seen_at)
+        next_ip = case((is_newest, job.ip), else_=PrinterDevice.last_ip)
     await session.execute(
         update(PrinterDevice)
         .where(PrinterDevice.id == device_id)
         .values(
             last_driver_name=job.name,
-            last_ip=job.ip if job.success and is_ip(job.ip) else PrinterDevice.last_ip,
+            last_ip=next_ip,
             last_seen=func.greatest(func.coalesce(PrinterDevice.last_seen, job.seen_at), job.seen_at),
         )
     )
