@@ -41,7 +41,7 @@ export function useOverrideActions(
     if (!emp.blocked) {
       const who = emp.fullName ?? emp.login
       // Bu odamning chop etishini to'xtatadi — tasodifan bosilmasligi uchun so'raymiz.
-      if (!window.confirm(`${who} uchun chop etish to'silsinmi?`)) return
+      if (!window.confirm(`${who} uchun chop etish bloklansinmi?`)) return
     }
     await run(emp.login, { blocked: !emp.blocked })
   }

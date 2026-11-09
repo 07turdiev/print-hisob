@@ -14,7 +14,7 @@ const maxCount = computed(() => Math.max(1, ...props.failures.map((f) => f.count
     <header class="panel__head">
       <h2 class="panel__title">
         <span class="panel__title-icon"><AppIcon name="warning" :size="16" /></span>
-        Xatoliklar sababi bo'yicha
+        Bajarilmagan ishlar sababi bo'yicha
       </h2>
       <span class="panel__count">Jami: {{ total }}</span>
     </header>
@@ -34,7 +34,7 @@ const maxCount = computed(() => Math.max(1, ...props.failures.map((f) => f.count
 
       <div v-else class="empty-state">
         <span class="empty-state__icon"><AppIcon name="check-circle" :size="20" /></span>
-        Bu davrda muvaffaqiyatsiz chop etish qayd etilmagan
+        Bu davrda bajarilmagan ish qayd etilmagan
       </div>
     </div>
   </section>

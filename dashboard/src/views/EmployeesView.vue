@@ -67,9 +67,10 @@ function handleSave(login: string, allocatedPages: number) {
     <p class="alert alert--info">
       <span class="alert__icon"><AppIcon name="info" :size="16" /></span>
       <span>
-        Kvota faqat tanlangan davr uchun saqlanadi. Kvotasi belgilanmagan xodimlarga standart
-        <strong>{{ defaultQuota }}</strong> varaq qo'llaniladi. Kvotani o'zgartirish uchun jadvaldagi
-        qiymat ustiga bosing.
+        Norma faqat tanlangan davr uchun saqlanadi. Normasi belgilanmagan xodimlarga standart
+        <strong>{{ defaultQuota }}</strong> varaq qo'llaniladi. Normani o'zgartirish uchun jadvaldagi
+        qiymat ustiga bosing. Holat ustunida: Bloklangan xodim umuman chop eta olmaydi, Istisno
+        xodimning umumiy printerlardan tashqari ham ruxsati bor.
       </span>
     </p>
 
@@ -80,7 +81,7 @@ function handleSave(login: string, allocatedPages: number) {
 
     <EmployeeQuotaTable
       :employees="rows"
-      title="Xodimlar va kvotalar ro'yxati"
+      title="Xodimlar va normalar ro'yxati"
       variant="management"
       :busy-login="busyLogin"
       @save="handleSave"

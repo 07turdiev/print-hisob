@@ -124,7 +124,7 @@ function mergeError(): string | null {
           <span class="panel__title-icon"><AppIcon name="printers" :size="16" /></span>
           Printerlar ro'yxati
         </h2>
-        <span class="panel__count">{{ printers.length }} ta qurilma</span>
+        <span class="panel__count">{{ printers.length }} ta printer</span>
       </header>
 
       <div class="table-wrap">

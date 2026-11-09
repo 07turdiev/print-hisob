@@ -66,12 +66,12 @@ function clearFilters() {
 
     <div class="filter-bar">
       <label class="field">
-        <span>Foydalanuvchi</span>
+        <span>Xodim</span>
         <input v-model="user" type="text" placeholder="login" />
       </label>
       <label class="field">
         <span>Kompyuter</span>
-        <input v-model="computer" type="text" placeholder="PC nomi" />
+        <input v-model="computer" type="text" placeholder="Kompyuter nomi" />
       </label>
       <label class="field">
         <span>Printer</span>
@@ -82,7 +82,7 @@ function clearFilters() {
         <select v-model="success">
           <option value="">Barchasi</option>
           <option value="true">Muvaffaqiyatli</option>
-          <option value="false">Xatolik</option>
+          <option value="false">Bajarilmagan</option>
         </select>
       </label>
       <label class="field">
@@ -104,7 +104,7 @@ function clearFilters() {
       <header class="panel__head">
         <h2 class="panel__title">
           <span class="panel__title-icon"><AppIcon name="journal" :size="16" /></span>
-          Chop etish hodisalari
+          Chop etish ishlari
         </h2>
         <span class="panel__count">{{ rangeLabel }}</span>
       </header>
@@ -115,7 +115,7 @@ function clearFilters() {
             <tr>
               <th class="col-num">T/r</th>
               <th>Sana va vaqt</th>
-              <th>Foydalanuvchi</th>
+              <th>Xodim</th>
               <th>Kompyuter</th>
               <th>Hujjat</th>
               <th>Printer</th>
@@ -163,8 +163,8 @@ function clearFilters() {
               </td>
               <td>
                 <span v-if="job.success" class="badge badge--success">Muvaffaqiyatli</span>
-                <span v-else class="badge badge--danger" :title="job.reason ?? 'Xatolik'">
-                  <span class="reason-text">{{ job.reason ?? 'Xatolik' }}</span>
+                <span v-else class="badge badge--danger" :title="job.reason ?? 'Bajarilmagan'">
+                  <span class="reason-text">{{ job.reason ?? 'Bajarilmagan' }}</span>
                 </span>
               </td>
             </tr>

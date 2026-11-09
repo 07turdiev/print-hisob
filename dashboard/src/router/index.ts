@@ -40,7 +40,7 @@ const router = createRouter({
       name: 'home',
       component: HomeView,
       meta: {
-        title: "Umumiy ko'rinish",
+        title: 'Bosh sahifa',
         description: "Tanlangan davr bo'yicha qog'oz sarfining umumiy holati",
         showPeriodSelector: true,
       },
@@ -52,7 +52,7 @@ const router = createRouter({
       meta: {
         title: 'Choraklik hisobot',
         section: 'Hisobotlar',
-        description: "Chorak kesimida xodimlar bo'yicha sarf va kvota taqqoslamasi",
+        description: "Chorak kesimida xodimlar bo'yicha sarf va norma taqqoslamasi",
         showPeriodSelector: true,
       },
     },
@@ -63,7 +63,7 @@ const router = createRouter({
       meta: {
         title: 'Oylik hisobot',
         section: 'Hisobotlar',
-        description: "Oy kesimida xodimlar bo'yicha sarf va kvota taqqoslamasi",
+        description: "Oy kesimida xodimlar bo'yicha sarf va norma taqqoslamasi",
         showPeriodSelector: true,
       },
     },
@@ -72,9 +72,9 @@ const router = createRouter({
       name: 'employees',
       component: EmployeesView,
       meta: {
-        title: 'Xodimlar va kvotalar',
+        title: 'Xodimlar va normalar',
         section: "Ma'lumotnomalar",
-        description: "Active Directory xodimlari ro'yxati va davr uchun qog'oz kvotalari",
+        description: "Active Directory xodimlari ro'yxati va davr uchun qog'oz normalari",
         showPeriodSelector: true,
       },
     },
@@ -96,7 +96,7 @@ const router = createRouter({
       meta: {
         title: 'Printerlar',
         section: "Ma'lumotnomalar",
-        description: "Qurilmalar bo'yicha sarf, xatolar va do'stona nomlar",
+        description: "Printerlar bo'yicha sarf, xatolar va nomlar",
         showPeriodSelector: true,
       },
     },
@@ -118,7 +118,7 @@ const router = createRouter({
       meta: {
         title: 'Chop etishlar jurnali',
         section: 'Nazorat',
-        description: "Barcha chop etish hodisalarining batafsil ro'yxati",
+        description: "Barcha chop etish ishlarining batafsil ro'yxati",
         showPeriodSelector: false,
       },
     },
@@ -129,7 +129,7 @@ const router = createRouter({
       meta: {
         title: 'Agentlar holati',
         section: 'Nazorat',
-        description: 'Ish stantsiyalaridagi hisobot agentlarining ishlash holati',
+        description: 'Kompyuterlardagi hisobot agentlarining ishlash holati',
         showPeriodSelector: false,
       },
     },

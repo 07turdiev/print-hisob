@@ -15,7 +15,7 @@ const loading = ref(false)
 const error = ref<string | null>(null)
 
 const FEATURES = [
-  { icon: 'pages', text: "Xodimlar kesimida qog'oz sarfi va kvota nazorati" },
+  { icon: 'pages', text: "Xodimlar kesimida qog'oz sarfi va norma nazorati" },
   { icon: 'quarterly', text: 'Choraklik va oylik hisobotlar, KPI shaklida eksport' },
   { icon: 'printers', text: "Printerlar va bo'limlar bo'yicha jamlanma tahlil" },
   { icon: 'shield', text: 'Active Directory bilan avtomatik sinxronizatsiya' },
@@ -33,7 +33,7 @@ async function submit() {
     if (err instanceof ApiError && err.status === 401) {
       error.value = "Foydalanuvchi nomi yoki parol noto'g'ri"
     } else {
-      error.value = 'Kirishda xatolik yuz berdi. Serverni tekshiring.'
+      error.value = 'Kirishda xato yuz berdi. Serverni tekshiring.'
     }
   } finally {
     loading.value = false

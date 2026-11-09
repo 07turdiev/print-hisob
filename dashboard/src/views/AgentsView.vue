@@ -108,7 +108,7 @@ function clearFilters() {
     </p>
 
     <div class="grid-3">
-      <StatTile label="Jami agentlar" :value="fmt(summary?.total)" icon="agents" tone="muted" hint="Ro'yxatga olingan ish stantsiyalari" />
+      <StatTile label="Jami agentlar" :value="fmt(summary?.total)" icon="agents" tone="muted" hint="Ro'yxatga olingan kompyuterlar" />
       <StatTile label="Ishlayapti" :value="fmt(summary?.working)" icon="check-circle" tone="success" />
       <StatTile
         label="Xato"
@@ -136,7 +136,7 @@ function clearFilters() {
         <span>Qidiruv</span>
         <span class="search-box">
           <AppIcon name="search" :size="15" />
-          <input v-model="search" type="text" placeholder="Kompyuter yoki foydalanuvchi bo'yicha qidirish" />
+          <input v-model="search" type="text" placeholder="Kompyuter yoki xodim bo'yicha qidirish" />
         </span>
       </label>
 
@@ -175,7 +175,7 @@ function clearFilters() {
                 Kompyuter <span class="sort-caret">{{ sortCaret('computer') }}</span>
               </th>
               <th class="sortable" @click="setSort('username')">
-                Foydalanuvchi <span class="sort-caret">{{ sortCaret('username') }}</span>
+                Xodim <span class="sort-caret">{{ sortCaret('username') }}</span>
               </th>
               <th class="sortable" @click="setSort('version')">
                 Versiya <span class="sort-caret">{{ sortCaret('version') }}</span>

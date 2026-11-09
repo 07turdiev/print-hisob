@@ -4,6 +4,7 @@ import {
   ApiError,
   getEmployeeStats,
   getEmployees,
+  getPrinterGroups,
   getQuotas,
   getSummary,
   getUserOverrides,
@@ -15,6 +16,7 @@ import type {
   EmployeeQuota,
   EmployeeStat,
   MergedEmployeeRow,
+  PrinterGroup,
   UserOverride,
   UserOverrideInput,
 } from '../api/types'
@@ -42,6 +44,8 @@ export function useEmployeesPage() {
   const quotas = ref<EmployeeQuota[]>([])
   /** Admin qo'lda belgilagan bloklash/biriktirish holatlari. */
   const overrides = ref<UserOverride[]>([])
+  /** Istisno guruhlari: xodim holati ustunida ko'rsatiladi. */
+  const groups = ref<PrinterGroup[]>([])
   /** Default quota (pages) for the selected period, used when an employee has neither
    *  a stats row (no prints) nor an explicit quota row — keeps this page in sync with
    *  what the backend applies everywhere else instead of falling back to a hardcoded 0. */
@@ -61,7 +65,7 @@ export function useEmployeesPage() {
     error.value = null
     try {
       const periodParams = { periodType: periodType.value, year: year.value, periodNo: periodNo.value }
-      const [adRes, statsRes, quotasRes, summaryRes, overridesRes] = await Promise.all([
+      const [adRes, statsRes, quotasRes, summaryRes, overridesRes, groupsRes] = await Promise.all([
         getEmployees({
           department: department.value || undefined,
           q: search.value || undefined,
@@ -72,12 +76,14 @@ export function useEmployeesPage() {
         getQuotas(periodParams),
         getSummary(periodParams),
         getUserOverrides(),
+        getPrinterGroups(),
       ])
       adEmployees.value = adRes
       stats.value = statsRes
       quotas.value = quotasRes
       defaultQuota.value = summaryRes.defaultQuota
       overrides.value = overridesRes
+      groups.value = groupsRes
     } catch (err) {
       error.value = err instanceof ApiError ? err.message : "Ma'lumotlarni yuklab bo'lmadi"
     } finally {
@@ -131,6 +137,7 @@ export function useEmployeesPage() {
     const statMap = new Map(stats.value.map((s) => [normalizeLogin(s.login), s]))
     const quotaMap = new Map(quotas.value.map((q) => [normalizeLogin(q.login), q.allocatedPages]))
     const overrideMap = new Map(overrides.value.map((o) => [normalizeLogin(o.login), o]))
+    const groupMap = new Map(groups.value.flatMap((g) => g.logins.map((login) => [login, g.name] as const)))
     const seen = new Set<string>()
     const result: MergedEmployeeRow[] = []
 
@@ -159,6 +166,7 @@ export function useEmployeesPage() {
         // mumkin, shuning uchun bloklash/biriktirish alohida ro'yxatdan olinadi.
         chargedTo: override?.chargeToLogin ?? stat?.chargedTo ?? null,
         blocked: override?.blocked ?? stat?.blocked ?? false,
+        accessGroup: groupMap.get(key) ?? null,
       })
     }
 
@@ -184,6 +192,7 @@ export function useEmployeesPage() {
         matchStatus: stat.matchStatus,
         chargedTo: override?.chargeToLogin ?? stat.chargedTo,
         blocked: override?.blocked ?? stat.blocked,
+        accessGroup: groupMap.get(key) ?? null,
       })
     }
 
@@ -218,7 +227,7 @@ export function useEmployeesPage() {
     })
     if (!saved) return
 
-    const existingQuota = quotas.value.find((q) => q.login === login)
+    const existingQuota = quotas.value.find((q) => q.login === normalizeLogin(login))
     if (existingQuota) {
       existingQuota.allocatedPages = saved.allocatedPages
     } else {
@@ -228,8 +237,8 @@ export function useEmployeesPage() {
     const stat = stats.value.find((s) => s.login === login)
     if (stat) {
       stat.allocated = saved.allocatedPages
-      stat.remaining = stat.allocated - stat.used
-      stat.overLimit = stat.used > stat.allocated
+      stat.remaining = stat.allocated - stat.usedTotal
+      stat.overLimit = stat.usedTotal > stat.allocated
     }
   }
 

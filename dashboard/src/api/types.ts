@@ -43,8 +43,10 @@ export interface EmployeeStat {
   matchStatus: MatchStatus
   /** Bu xodimning varaqlari qo'shimcha ravishda kimning hisobida ko'rsatiladi. */
   chargedTo: string | null
-  /** Admin tomonidan chop etishdan to'silganmi. */
+  /** Admin tomonidan chop etishdan bloklanganmi. */
   blocked: boolean
+  /** Istisno guruhi nomi. Faqat Xodimlar sahifasida to'ldiriladi. */
+  accessGroup?: string | null
 }
 
 export interface TimeseriesPoint {
@@ -134,8 +136,10 @@ export interface MergedEmployeeRow {
   matchStatus: MatchStatus
   /** Bu xodimning varaqlari qo'shimcha ravishda kimning hisobida ko'rsatiladi. */
   chargedTo: string | null
-  /** Admin tomonidan chop etishdan to'silganmi. */
+  /** Admin tomonidan chop etishdan bloklanganmi. */
   blocked: boolean
+  /** Istisno guruhi nomi. Faqat Xodimlar sahifasida to'ldiriladi. */
+  accessGroup?: string | null
 }
 
 // --- Printers --------------------------------------------------------------
@@ -212,10 +216,9 @@ export interface PrinterAccessPatch {
 /**
  * Guruh siyosati (standart qoidadan istisno):
  * - `all` — barcha printerlar;
- * - `allowed` — umumiy printerlar va guruhda belgilanganlar;
- * - `none` — umuman chiqara olmaydi.
+ * - `allowed` — umumiy printerlar va guruhda belgilanganlar.
  */
-export type PrinterGroupPolicy = 'all' | 'allowed' | 'none'
+export type PrinterGroupPolicy = 'all' | 'allowed'
 
 /** Xodimlar guruhi va unga biriktirilgan printer ruxsati. */
 export interface PrinterGroup {

@@ -31,25 +31,25 @@ const QUICK_LINKS = [
     to: '/choraklik',
     icon: 'quarterly',
     label: 'Choraklik hisobot',
-    desc: "Chorak bo'yicha xodimlar kesimi va kvota nazorati",
+    desc: "Chorak bo'yicha xodimlar kesimi va norma nazorati",
   },
   {
     to: '/oylik',
     icon: 'monthly',
     label: 'Oylik hisobot',
-    desc: "Oy bo'yicha sarf dinamikasi va limitlar",
+    desc: "Oy bo'yicha sarf dinamikasi va normalar",
   },
   {
     to: '/xodimlar',
     icon: 'employees',
-    label: 'Xodimlar va kvotalar',
-    desc: 'Kvotalarni belgilash va AD sinxron holati',
+    label: 'Xodimlar va normalar',
+    desc: 'Normalarni belgilash va AD sinxron holati',
   },
   {
     to: '/jurnal',
     icon: 'journal',
     label: 'Chop etishlar jurnali',
-    desc: "Har bir chop etish hodisasi bo'yicha batafsil ma'lumot",
+    desc: "Har bir chop etish ishi bo'yicha batafsil ma'lumot",
   },
 ]
 </script>
@@ -66,7 +66,7 @@ const QUICK_LINKS = [
       <span>Joriy hisobot davri:</span>
       <strong>{{ periodLabel }}</strong>
       <span v-if="summary" class="period-strip__extra">
-        · Standart kvota: {{ numberFormat.format(summary.defaultQuota) }} varaq
+        · Standart norma: {{ numberFormat.format(summary.defaultQuota) }} varaq
       </span>
     </div>
 
@@ -74,15 +74,15 @@ const QUICK_LINKS = [
 
     <div class="grid-3">
       <StatTile
-        label="Limitdan oshgan xodimlar"
+        label="Normadan oshgan xodimlar"
         :value="overLimitCount"
         icon="warning"
         :tone="overLimitCount > 0 ? 'danger' : 'success'"
-        :hint="overLimitCount > 0 ? 'Kvotasi tugagan xodimlar' : 'Barchasi kvota ichida'"
+        :hint="overLimitCount > 0 ? 'Normasi tugagan xodimlar' : 'Barchasi norma ichida'"
         to="/xodimlar"
       />
       <StatTile
-        label="Noma'lum foydalanuvchilar"
+        label="Noma'lum loginlar"
         :value="unmatchedCount"
         icon="user"
         :tone="unmatchedCount > 0 ? 'warning' : 'success'"

@@ -28,13 +28,12 @@ const {
 } = usePrinterGroupsPage()
 
 const POLICIES: { value: PrinterGroupPolicy; label: string; hint: string }[] = [
-  { value: 'all', label: 'Barcha printerlar', hint: 'Istisno: istalgan printerdan chiqaradi' },
+  { value: 'all', label: 'Barcha printerlar', hint: 'Istisno: istalgan printerdan chop etadi' },
   {
     value: 'allowed',
     label: "Ma'lum printerlar",
-    hint: 'Istisno: umumiy printerlar va quyida belgilanganlardan chiqaradi',
+    hint: 'Istisno: umumiy printerlar va quyida belgilanganlardan chop etadi',
   },
-  { value: 'none', label: 'Chiqarmaydi', hint: 'Hech qaysi printerdan chiqara olmaydi' },
 ]
 
 function policyLabel(policy: PrinterGroupPolicy): string {
@@ -213,17 +212,17 @@ function when(iso: string): string {
       <span class="alert__icon"><AppIcon name="info" :size="16" /></span>
       <span>
         Guruhga kirmagan xodim standart qoidaga bo'ysunadi: cheklov yoqilgan bo'lsa faqat umumiy
-        printerlardan chiqaradi. Guruh shu qoidadan istisno. Bir xodim bir vaqtda faqat bitta
-        guruhda bo'ladi.
+        printerlardan chop etadi. Guruh shu qoidadan istisno. Bir xodim bir vaqtda faqat bitta
+        guruhda bo'ladi. Umuman chop eta olmaydigan xodim "Xodimlar va normalar" sahifasida
+        bloklanadi.
       </span>
     </p>
 
     <p class="alert alert--warning">
       <span class="alert__icon"><AppIcon name="clock" :size="16" /></span>
       <span>
-        <strong>Chiqarmaydi</strong> darajasi bugundan ishlaydi — u xodimni bloklash bilan bir
-        xil kanaldan o'tadi. Printer ro'yxati bo'yicha cheklov esa agent yangilanganidan keyin
-        kuchga kiradi; hozircha u faqat hisobotda ko'rinadi.
+        Printer ro'yxati bo'yicha cheklov agent yangilanganidan keyin kuchga kiradi, hozircha u
+        faqat hisobotda ko'rinadi.
       </span>
     </p>
 
@@ -241,7 +240,7 @@ function when(iso: string): string {
 
       <div class="editor editor--flat">
         <div class="field">
-          <span class="field__label">Barcha xodimlar chiqara oladigan printerlar</span>
+          <span class="field__label">Barcha xodimlar chop eta oladigan printerlar</span>
           <PickerList
             :items="printers"
             :key-of="(p) => p.id"
@@ -255,7 +254,7 @@ function when(iso: string): string {
           />
           <p class="field__hint">
             Microsoft Print to PDF kabi virtual printerlarni ham shu yerda belgilang, aks holda
-            PDF'ga saqlash ham to'siladi.
+            PDF'ga saqlash ham bloklanadi.
           </p>
         </div>
 
@@ -264,7 +263,7 @@ function when(iso: string): string {
           <span>
             <span class="radio__label">Boshqa printerlarni cheklash</span>
             <span class="radio__hint">
-              Guruhga kirmagan xodim faqat yuqoridagi printerlardan chiqaradi. O'chirilsa hamma
+              Guruhga kirmagan xodim faqat yuqoridagi printerlardan chop etadi. O'chirilsa hamma
               avvalgidek ishlaydi.
             </span>
           </span>
@@ -409,7 +408,7 @@ function when(iso: string): string {
               <span class="field__label">Umumiy printerlarga qo'shimcha ruxsat</span>
               <p v-if="emptyAllowed" class="row-error">
                 Birorta printer belgilanmagan — bu holatda guruh a'zolari hech qaysi printerdan
-                chiqara olmaydi.
+                chop eta olmaydi.
               </p>
               <PickerList
                 :items="printers"
@@ -472,7 +471,7 @@ function when(iso: string): string {
       <header class="panel__head">
         <h2 class="panel__title">
           <span class="panel__title-icon"><AppIcon name="warning" :size="16" /></span>
-          Ruxsat etilmagan printerdan chiqarilgan
+          Ruxsat etilmagan printerdan chop etilgan
         </h2>
         <span class="panel__count">
           <template v-if="violations.length">
@@ -489,7 +488,7 @@ function when(iso: string): string {
       </p>
 
       <div v-else-if="!violations.length && !violationsLoading" class="empty-block">
-        Tanlangan davrda ruxsat etilmagan printerdan chiqarilmagan.
+        Tanlangan davrda ruxsat etilmagan printerdan chop etilmagan.
       </div>
 
       <div v-else class="table-wrap">
@@ -630,11 +629,6 @@ function when(iso: string): string {
 .badge--allowed {
   background: var(--color-accent-soft-bg);
   color: var(--color-accent);
-}
-
-.badge--none {
-  background: var(--color-danger-bg);
-  color: var(--color-danger-fg);
 }
 
 .badge--default {

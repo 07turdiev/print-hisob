@@ -21,7 +21,7 @@ const NAV_GROUPS = [
   {
     label: "Ma'lumotnomalar",
     items: [
-      { to: '/xodimlar', icon: 'employees', label: 'Xodimlar va kvotalar' },
+      { to: '/xodimlar', icon: 'employees', label: 'Xodimlar va normalar' },
       { to: '/bolimlar', icon: 'departments', label: "Bo'limlar" },
       { to: '/printerlar', icon: 'printers', label: 'Printerlar' },
     ],

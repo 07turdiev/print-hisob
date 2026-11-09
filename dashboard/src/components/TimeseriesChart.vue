@@ -39,7 +39,7 @@ const option = computed(() => {
     textStyle: t.textStyle,
     tooltip: { trigger: 'axis', ...t.tooltip },
     legend: {
-      data: ['Varaqlar', 'Buyurtmalar'],
+      data: ['Varaqlar', 'Ishlar'],
       top: 0,
       right: 0,
       itemWidth: 12,
@@ -99,7 +99,7 @@ const option = computed(() => {
         data: props.points.map((p) => p.pages),
       },
       {
-        name: 'Buyurtmalar',
+        name: 'Ishlar',
         type: 'bar',
         yAxisIndex: 1,
         barMaxWidth: 12,

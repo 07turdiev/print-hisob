@@ -29,13 +29,13 @@ const props = withDefaults(
     /**
      * Jadval ikki vazifada ishlatiladi va ustunlari shunga qarab farq qiladi:
      *
-     * - `management` (Xodimlar va kvotalar) — kvota belgilash, bloklash, biriktirish.
+     * - `management` (Xodimlar va normalar) — norma belgilash, bloklash, biriktirish.
      *   Sarf raqamlari ko'rsatilmaydi: bu sahifa boshqaruv uchun, hisobot uchun emas.
      * - `report` (Choraklik/Oylik) — faqat raqamlar, amal tugmalarisiz.
      */
     variant?: 'management' | 'report'
   }>(),
-  { title: "Xodimlar bo'yicha kvota", busyLogin: null, variant: 'report' },
+  { title: "Xodimlar bo'yicha norma", busyLogin: null, variant: 'report' },
 )
 
 const isManagement = computed(() => props.variant === 'management')
@@ -57,7 +57,7 @@ const periodLabel = computed(() =>
     : MONTH_NAMES[periodStore.periodNo - 1] ?? String(periodStore.periodNo),
 )
 
-const quotaColumnLabel = computed(() => `Kvota (${periodLabel.value})`)
+const quotaColumnLabel = computed(() => `Norma (${periodLabel.value})`)
 
 type SortKey =
   | 'name'
@@ -229,8 +229,15 @@ function confirmEdit(login: string) {
             <td>
               <div class="status-cell">
                 <StatusBadge :status="emp.matchStatus" />
-                <span v-if="emp.blocked" class="badge badge--danger" title="Chop etish to'silgan">
+                <span v-if="emp.blocked" class="badge badge--danger" title="Chop etish bloklangan">
                   Bloklangan
+                </span>
+                <span
+                  v-else-if="emp.accessGroup"
+                  class="badge badge--accent"
+                  :title="`Printer ruxsati guruhi: ${emp.accessGroup}`"
+                >
+                  Istisno
                 </span>
               </div>
             </td>
@@ -265,7 +272,7 @@ function confirmEdit(login: string) {
                 </button>
               </div>
 
-              <button v-else type="button" class="quota-value" title="Kvotani o'zgartirish" @click="startEdit(emp)">
+              <button v-else type="button" class="quota-value" title="Normani o'zgartirish" @click="startEdit(emp)">
                 {{ fmt(emp.allocated) }}
                 <AppIcon name="edit" :size="13" />
               </button>
@@ -326,11 +333,12 @@ function confirmEdit(login: string) {
     <footer v-if="employees.length" class="panel__foot">
       <!-- Boshqaruv ko'rinishida sarf raqamlari yo'q, shuning uchun jamlanma ham boshqacha -->
       <span v-if="isManagement">
-        Jami kvota: <strong class="foot-value">{{ fmt(totals.allocated) }}</strong> varaq
+        Jami norma: <strong class="foot-value">{{ fmt(totals.allocated) }}</strong> varaq
       </span>
       <span v-else>
-        Jami sarflangan: <strong class="foot-value">{{ fmt(totals.used) }}</strong> varaq &nbsp;·&nbsp;
-        Jami kvota: <strong class="foot-value">{{ fmt(totals.allocated) }}</strong> varaq
+        <span title="Biriktirilgan varaqlar ikki marta qo'shilmagan">Haqiqiy qog'oz sarfi:</span>
+        <strong class="foot-value">{{ fmt(totals.used) }}</strong> varaq &nbsp;·&nbsp;
+        Jami norma: <strong class="foot-value">{{ fmt(totals.allocated) }}</strong> varaq
       </span>
 
       <span class="foot-badges">

@@ -12,15 +12,15 @@ const numberFormat = new Intl.NumberFormat('uz-UZ')
     <header class="panel__head">
       <h2 class="panel__title">
         <span class="warn-icon"><AppIcon name="warning" :size="16" /></span>
-        Noma'lum foydalanuvchilar
+        Noma'lum loginlar
       </h2>
       <span class="panel__count">{{ employees.length }} ta login</span>
     </header>
 
     <div class="panel__body">
       <p class="hint">
-        Ushbu login'lar AD (Active Directory) ro'yxatida topilmadi, lekin chop etish hodisalari
-        qayd etilgan. Ularning varaqlari hisobdan chiqarilmaydi — kvota va bo'lim ma'lumotini
+        Ushbu loginlar AD (Active Directory) ro'yxatida topilmadi, lekin chop etish ishlari
+        qayd etilgan. Ularning varaqlari hisobdan chiqarilmaydi — norma va bo'lim ma'lumotini
         tekshiring.
       </p>
     </div>

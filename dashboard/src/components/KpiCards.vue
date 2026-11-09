@@ -29,7 +29,7 @@ const failedHint = computed(() => {
   const s = props.summary
   if (!s) return undefined
   const failed = Math.max(0, s.totalJobs - Math.round(s.totalJobs * s.successRate))
-  return failed > 0 ? `${numberFormat.format(failed)} ta xatolik` : 'Xatoliksiz'
+  return failed > 0 ? `${numberFormat.format(failed)} ta xato` : 'Xatosiz'
 })
 </script>
 
@@ -37,10 +37,10 @@ const failedHint = computed(() => {
   <div class="grid-3">
     <StatTile label="Jami varaqlar" :value="fmt(summary?.totalPages)" icon="pages" hint="Sarflangan qog'oz" />
     <StatTile
-      label="Jami buyurtmalar"
+      label="Jami ishlar"
       :value="fmt(summary?.totalJobs)"
       icon="layers"
-      hint="Chop etish hodisalari"
+      hint="Bekor qilinganlarsiz"
     />
     <StatTile
       label="Muvaffaqiyat darajasi"

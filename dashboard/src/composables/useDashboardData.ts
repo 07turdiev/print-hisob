@@ -90,8 +90,8 @@ export function useDashboardData() {
     const target = employees.value.find((emp) => emp.login === login)
     if (target && saved) {
       target.allocated = saved.allocatedPages
-      target.remaining = target.allocated - target.used
-      target.overLimit = target.used > target.allocated
+      target.remaining = target.allocated - target.usedTotal
+      target.overLimit = target.usedTotal > target.allocated
     }
   }
 

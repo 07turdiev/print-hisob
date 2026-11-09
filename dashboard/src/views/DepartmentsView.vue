@@ -49,9 +49,9 @@ const totals = computed(() => ({
               <th class="col-num">T/r</th>
               <th>Bo'lim nomi</th>
               <th class="num">Xodimlar</th>
-              <th class="num">Buyurtmalar</th>
+              <th class="num">Ishlar</th>
               <th class="num">Sarflangan</th>
-              <th class="col-usage">Kvotaga nisbatan</th>
+              <th class="col-usage">Bajarilishi</th>
             </tr>
           </thead>
           <tbody>
@@ -76,11 +76,11 @@ const totals = computed(() => ({
       <footer v-if="departments.length" class="panel__foot">
         <span>
           Jami: <strong class="foot-value">{{ fmt(totals.employees) }}</strong> xodim ·
-          <strong class="foot-value">{{ fmt(totals.jobs) }}</strong> buyurtma ·
+          <strong class="foot-value">{{ fmt(totals.jobs) }}</strong> ish ·
           <strong class="foot-value">{{ fmt(totals.pages) }}</strong> varaq
         </span>
         <span v-if="totals.overLimit" class="badge badge--danger">
-          Limitdan oshgan: {{ totals.overLimit }} ta bo'lim
+          Normadan oshgan: {{ totals.overLimit }} ta bo'lim
         </span>
       </footer>
     </section>
