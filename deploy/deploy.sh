@@ -76,7 +76,15 @@ switch_code() { # switch_code <dan> <gacha>
 }
 
 install_backend() {
-  (cd api && .venv/bin/pip install --quiet --disable-pip-version-check -r requirements.txt </dev/null)
+  (
+    cd api || exit 1
+    # Virtual muhit `uv` bilan qurilgan bo'lsa unda pip bo'lmaydi.
+    if [ -x .venv/bin/pip ]; then
+      .venv/bin/pip install --quiet --disable-pip-version-check -r requirements.txt </dev/null
+    else
+      uv pip install --quiet --python .venv/bin/python -r requirements.txt </dev/null
+    fi
+  )
 }
 
 install_dashboard() {
