@@ -1,237 +1,159 @@
-# Printer Hisob — agent uchun o'zgarishlar (PrintMonitor.exe)
+# PrintMonitor agenti uchun topshiriq: printerlarni cheklash
 
-Hujjat sanasi: 2026-11-02 · Madaniy Hayot
+Hujjat sanasi: 2026-11-09 · Madaniy Hayot · Asos: agent 1.6.1.0
 
-## Qisqa xulosa
+## Nima uchun
 
-Agentda ikkita majburiy o'zgarish va ikkita tavsiya bor. Asosiysi — serverdan keladigan
-`allowedPrinters` ro'yxatini qo'llash: xodim faqat o'ziga ruxsat etilgan printerlardan
-chiqara olishi kerak.
+Vazirlik topshirig'iga ko'ra xodimlar faqat umumiy foydalanish uchun belgilangan
+printerlardan chop etishi kerak. Qolgan printerlarda chop etish texnik jihatdan cheklanadi,
+ayrim xodimlarga vazir ruxsati bilan istisno beriladi.
 
-To'sish qarorini **agent** qabul qilishi kerak, chunki ish navbatga tushgan va printer
-qog'ozni tortgan payt orasida millisekundlar bor. Server faqat ro'yxatni yetkazadi.
+Ruxsat ro'yxatini server beradi, to'sish qarorini esa **agent** qabul qiladi: ish navbatga
+tushgan va printer qog'oz tortgan payt orasida serverga borib kelishga vaqt yo'q.
 
-| O'zgarish | Majburiylik | Hujjatdagi bo'limi |
-| --- | --- | --- |
-| Javobdagi `allowedPrinters` ro'yxatini qo'llash | majburiy | 2-o'zgarish |
-| `appsettings.json` da `QuotaSyncIntervalMinutes: 1` | majburiy | 3-o'zgarish |
-| `printerMac` ni hozir bo'sh ketayotgan holatlarda ham to'ldirish | tavsiya | 1-o'zgarish |
-| Yangi `printerPort` maydonini yuborish | tavsiya | 1-o'zgarish |
+## Nima qilish kerak
 
-Server tomoni orqaga mos: yangi maydon qo'shilgandan keyin ham eski agentlar avvalgidek
-ishlaydi. Shuning uchun server oldin chiqariladi, agent keyin yangilanadi — flotdagi
-189 ta mashinani bir vaqtda yangilash shart emas.
-
-Serverning asosiy manzili: `https://print.madaniyhayot.uz`. Endpointlar va
-autentifikatsiya o'zgarmaydi.
-
-## Server printerni qanday aniqlaydi
-
-Serverda printerlar reyestri ishga tushdi: har bir jismoniy printer bazada bitta yozuv,
-admin unga o'zi nom qo'yadi ("3-qavat, kotibiyat"). Jurnalda va hisobotlarda drayver nomi
-emas, shu nom ko'rinadi.
-
-Agent yuborgan har bir yozuv uchta nishondan biri bo'yicha qurilmaga bog'lanadi — aynan
-shu tartibda:
-
-1. `printerMac` — bor bo'lsa, asosiy kalit.
-2. `printerIp` — haqiqiy IPv4 bo'lsa. Port nomlari (`USB001`, `WSD-a1b2…`, `nul:`) nishon
-   sifatida qabul qilinmaydi: ular har bir kompyuterda boshqa printerni bildiradi.
-3. `printer` — drayver nomi. Faqat MAC ham, IP ham bo'lmaganda ishlatiladi.
-
-Nishon bir marta qurilmaga bog'langach, o'sha qurilmada qoladi. Shuning uchun bitta
-printer turli kompyuterlarda "HP LaserJet M404", "HP LaserJet MFP M428" va "Kotibiyat
-printeri" deb atalgan bo'lsa ham, MAC yoki IP bir xil bo'lsa — bazada bitta qator.
-
-Agentda bu qism uchun kod o'zgarishi kerak emas: `printer`, `printerIp`, `printerMac`
-maydonlari allaqachon yuborilayapti va ularning ma'nosi o'zgarmadi.
-
-## 1-o'zgarish — `printerMac` ni to'ldirish (tavsiya)
-
-**Joriy holat — o'lchangan.** 2026-yil 2-noyabr holatiga ko'ra bazadagi 28 443 yozuvdan
-11 754 tasida (41%) `printerMac` bor, va ularning hammasi to'g'ri formatda keladi. Ya'ni
-agent MAC ni allaqachon yuborayapti — lekin hamma holatda emas.
-
-MAC bir printerga tegishli ekani tasdiqlandi: bitta MAC 16 ta kompyuterda, 1 ta IP bilan,
-11 xil drayver nomi ostida ko'rinadi. Aynan shu narsa bitta printerni bazada bir necha
-qator qilib ajratib yuborgan.
-
-Qolgan 16 689 yozuvda (59%) MAC yo'q, va sababi ikki xil:
-
-| MAC siz yozuvlar | Soni | Nima ko'rinadi | Ehtimoliy sabab |
+| № | Ish | Majburiylik | Bo'lim |
 | --- | --- | --- | --- |
-| Port ham bo'sh | 11 329 | `printerIp` bo'sh, 80 xil nom | Ulashilgan (`\\server\printer`) yoki mahalliy printer — agent port haqida hech narsa yubormayapti |
-| Haqiqiy IP bor | 5 360 | `192.168.20.x`, `192.168.30.x` | Agent MAC ni aniqlay olmagan — printer boshqa pod-tarmoqda bo'lsa ARP ishlamaydi |
+| 1 | Server bergan `allowedPrinters` ro'yxatini qo'llash va diskda saqlash | majburiy | Ruxsatni tekshirish |
+| 2 | To'silgan ishni serverga yuborish va foydalanuvchiga sababini aytish | majburiy | To'silgan ish |
+| 3 | `printerMac` ni faqat ishonchli bo'lganda yuborish | majburiy | MAC manzil |
+| 4 | Yangi versiya raqami (1.6.1.0 dan katta) | majburiy | Chiqarish tartibi |
+| 5 | Ortiqcha "bekor qilingan" yozuvlar sababini aniqlash | tavsiya | Ortiqcha yozuvlar |
 
-Kompyuterlar kesimi: 6 ta mashina MAC ni doim yuboradi, 88 tasi ba'zan, 34 tasi hech
-qachon. Demak muammo agent versiyasida emas — bitta mashina bir printerga MAC bilan,
-boshqasiga MAC siz yozadi.
+Endpointlar, autentifikatsiya va yuboriladigan maydonlar o'zgarmaydi. Yangi maydon qo'shish
+shart emas.
 
-**Buning narxi:** 29 ta jismoniy printer bazada 114 ta qurilma bo'lib yotibdi (80 tasi
-faqat nom bo'yicha aniqlangan). Hisobotlar shuning uchun bo'linib ketgan.
+**Avval javob bering:** 1.6.1.0 versiyasi `allowedPrinters` ni allaqachon qo'llayaptimi?
+Serverdan buni ko'rib bo'lmaydi, chunki hozir hammaga `["*"]` ketyapti. Javobingiz ish
+hajmini belgilaydi.
 
-**Nima uchun kerak:** DHCP IP ni almashtirsa yoki printer boshqa pod-tarmoqqa ko'chsa,
-server uni yangi qurilma deb biladi — statistika ikkiga bo'linadi va admin ularni qo'lda
-birlashtirishi kerak bo'ladi. MAC esa o'zgarmaydi.
+## Hozirgi holat
 
-**Format muhim emas.** Server qabul qilishdan oldin o'zi normallashtiradi — quyidagilarning
-hammasi bir xil printer sifatida tushadi:
+- Server javobida `allowedPrinters` 2026-yil 2-noyabrdan beri bor. Hozir hammaga `["*"]`
+  ketmoqda, ya'ni hech kim cheklanmagan.
+- Umumiy printerlar serverda belgilangan, lekin cheklov o'chiq. U agent tayyor bo'lgach
+  yoqiladi.
+- `limit: 0` bugun to'g'ri ishlayapti: oxirgi ikki kunda server `0` bergan 5 396 holatdan
+  5 395 tasida agent ham `0` ni qo'llagan. To'sish mexanizmi tayyor, unga yangi sabab
+  qo'shiladi.
+- Flotda 155 ta agent bor, 138 tasi 1.6.1.0 versiyasida.
 
-```
-52:54:00:12:34:56
-52-54-00-12-34-56
-525400123456
-5254.0012.3456
-```
+## Server bilan almashinuv
 
-Saqlanadigan ko'rinish: katta harf, ikki nuqta bilan (`52:54:00:12:34:56`). 12 ta onalik
-raqamga keltirib bo'lmaydigan qiymat o'z holida saqlanadi, hech narsa buzilmaydi. Maydon
-uzunligi — 64 belgigacha.
-
-**Qanday olish mumkin** (tarmoq printerlari uchun):
-
-- `Win32_TCPIPPrinterPort` → port IP si → ARP jadvali (`GetIpNetTable`, yoki oddiy
-  `arp -a`) → MAC;
-- yoki printerning SNMP `ifPhysAddress` qiymati (OID `1.3.6.1.2.1.2.2.1.6`);
-- USB printerlarda MAC yo'q — bu normal, maydon bo'sh qolsa server IP yoki nom bo'yicha
-  ishlaydi.
-
-**Muhim — MAC aynan printerning o'zi bo'lishi kerak.** Noto'g'ri MAC bo'sh MAC dan ancha
-yomon: bir xil MAC bilan kelgan printerlar bazada bitta qurilmaga qo'shilib ketadi va buni
-keyin ajratib bo'lmaydi.
-
-- Printer `\\server\printer` ko'rinishida ulashilgan bo'lsa, ARP chop etish serverining
-  MAC'ini beradi — natijada o'sha serverdan ulashilgan **barcha** printerlar bitta qurilma
-  bo'lib qoladi. Bunday holatda MAC yubormaslik kerak.
-- ARP jadvali faqat bir xil pod-tarmoqdagi qurilmalarni biladi. Printer router orqasida
-  bo'lsa yozuv topilmaydi — bu yerda SNMP ishlaydi.
-- Shubha bo'lsa `null` yuborilsin. Tizim IP va nom bilan ishlashda davom etadi.
-
-MAC keyinchalik o'zgarishi mumkin (tarmoq platasi almashtirilgan, printer kabeldan Wi-Fi ga
-o'tgan) — bu muammo emas: server printerni yangi qurilma deb biladi va admin ikkisini
-`merge` bilan birlashtiradi. Agent tomonida hech narsa qilish kerak emas, faqat qanday MAC
-ko'rinsa shuni yuborsin.
-
-### Qo'shimcha so'rov — `printerPort`
-
-MAC siz yozuvlarning ko'pchiligida (11 329 ta) `printerIp` ham bo'sh. Bunday yozuvda
-printerni ajratish uchun faqat drayver nomi qoladi — eng ishonchsiz nishon, chunki har
-kompyuterda boshqacha.
-
-Shuning uchun yangi ixtiyoriy maydon so'raymiz: `printerPort` — `Win32_Printer.PortName`
-qiymati, qanday bo'lsa shundayligida.
-
-```json
-{ "printer": "HP LaserJet M404", "printerPort": "IP_192.168.20.93" }
-```
-
-Bu juda qimmatli, chunki Windows'dagi TCP/IP port nomi ko'pincha printerning IP sini
-o'zida saqlaydi (`IP_192.168.20.93`), ulashilgan printerda esa barqaror yo'lni beradi
-(`\\SERVER\HP-3qavat`). Ikkisi ham drayver nomidan ancha ishonchli.
-
-Server tomoni bu maydonni qabul qilishga tayyorlanadi. Agent uchun ish hajmi kichik:
-qiymat `Win32_Printer` dan to'g'ridan-to'g'ri olinadi, hech narsa hisoblash kerak emas.
-
-MAC topilmasa `null` yoki bo'sh satr yuborilsa bo'ladi — ikkisi ham `NULL` sifatida
-yoziladi. Bu o'zgarish majburiy emas: ishlab turgan tizim MAC siz ham to'g'ri ishlaydi,
-faqat IP almashganda qo'l mehnati paydo bo'ladi.
-
-## 2-o'zgarish — `allowedPrinters` (asosiy ish)
-
-Mavjud `POST /api/print-quotas` javobiga bitta yangi maydon qo'shiladi. Endpoint,
-autentifikatsiya va so'rov tanasi o'zgarmaydi.
-
-**So'rov** (hozirgidek, o'zgarish yo'q):
+`POST /api/print-quotas`, sarlavha `X-Api-Key`. So'rov hozirgidek qoladi:
 
 ```json
 {
   "computer": "LAPTOP-JANE",
   "periodKey": "2026-Q4",
-  "timestamp": "2026-11-02T09:15:00Z",
+  "timestamp": "2026-11-09T09:15:00Z",
   "users": [
     { "user": "MADANIYAT\\e.turdiyev", "pagesUsedHere": 42, "pagesUsed": 137, "limit": -1 }
   ]
 }
 ```
 
-**Javob** (`allowedPrinters` — yangi, ikki joyda):
+Javob, cheklov yoqilgandan keyingi ko'rinishda:
 
 ```json
 {
   "periodKey": "2026-Q4",
   "defaultLimit": -1,
-  "allowedPrinters": ["*"],
+  "allowedPrinters": ["52:54:00:12:34:56", "192.168.1.51", "Microsoft Print to PDF"],
   "users": [
     {
-      "user": "e.turdiyev",
+      "user": "MADANIYAT\\e.turdiyev",
       "limit": -1,
       "used": 137,
-      "allowedPrinters": ["52:54:00:12:34:56", "192.168.1.51"]
-    }
+      "allowedPrinters": ["52:54:00:12:34:56", "192.168.1.51", "Microsoft Print to PDF"]
+    },
+    { "user": "a.karimov", "limit": -1, "used": 12, "allowedPrinters": ["*"] },
+    { "user": "b.aliyev", "limit": 0, "used": 3, "allowedPrinters": [] },
+    { "user": "d.rahimov", "limit": -1, "used": 0, "allowedPrinters": null }
   ]
 }
 ```
 
+`users[]` da agent so'ramagan loginlar ham bo'ladi. Ularni ham keshga yozing: shu odam keyin
+shu kompyuterga kirishi mumkin.
+
 ### Qiymatlarning ma'nosi
 
-| Qiymat | Agent nima qiladi |
+| `allowedPrinters` | Agent nima qiladi |
 | --- | --- |
-| maydon yo'q yoki `null` | cheklamaydi — "serverda bu haqda fikr yo'q" |
 | `["*"]` | barcha printerlar ruxsat |
-| `[]` (bo'sh ro'yxat) | hech qaysi printerdan chiqarmaydi |
+| `[]` | hech qaysi printerdan chiqarmaydi |
 | nishonlar ro'yxati | faqat shu printerlar ruxsat |
+| `null` yoki maydon yo'q | shu daraja uchun server fikr bildirmagan, keyingi darajaga o'tiladi |
 
-### Ustunlik tartibi
+### Qaysi ro'yxat qo'llanadi
 
-1. `users[].allowedPrinters` — shu foydalanuvchi uchun aniq ro'yxat;
-2. yuqoridagi umumiy `allowedPrinters` — ro'yxatda alohida ko'rsatilmagan hammaga;
-3. ikkisi ham yo'q — cheklov qo'llanmaydi.
+1. `users[]` dagi aynan shu xodim qatorining `allowedPrinters` qiymati.
+2. U `null` bo'lsa yoki xodim ro'yxatda bo'lmasa, javobning yuqori qismidagi `allowedPrinters`.
+3. U ham bo'lmasa, cheklov qo'llanmaydi.
 
-Bu `limit` va `defaultLimit` bilan to'liq bir xil mantiq, shuning uchun mavjud kodga
-qo'shib ketish oson bo'lishi kerak.
+Bu `limit` va `defaultLimit` bilan bir xil mantiq.
 
-### Nishon nima bo'lishi mumkin
+Xodim qatorini topishda ikki tomon ham bir xil ko'rinishga keltiriladi: oxirgi `\` dan
+keyingi qism, kichik harfda. Server so'ralgan login uchun agent yuborgan shaklni qaytaradi
+(`MADANIYAT\E.Turdiyev`), so'ralmagani uchun qisqa shaklni (`e.turdiyev`).
 
-Ro'yxat elementi — MAC, IPv4 yoki printer nomi. Uchalasi aralash kelishi mumkin:
+### Nishon nima
 
-```json
-"allowedPrinters": ["52:54:00:12:34:56", "192.168.1.51", "Kyocera M2040dn"]
-```
+Ro'yxat elementi MAC, IPv4 yoki printer nomi bo'ladi. Turi alohida ko'rsatilmaydi.
 
-Sabab: tarmoqdagi printerlarning bir qismida MAC bor, bir qismida faqat IP, USB
-printerlarda esa faqat nom. Server adminga qaysi nishon bor bo'lsa, shuni yuboradi.
+| Printer turi | Ro'yxatda nima keladi |
+| --- | --- |
+| Tarmoq printeri | MAC va joriy IP. Nom kelmaydi: bir xil nom turli printerlarda uchraydi |
+| USB printer | nom, faqat admin ruxsat bergan bo'lsa |
+| Virtual printer (PDF va boshqalar) | nom, faqat admin ro'yxatga qo'shgan bo'lsa |
 
-## Taqqoslash algoritmi
+Nom agent `printer` maydonida yuboradigan qiymatning aynan o'zi bo'ladi. Virtual printerlar
+uchun alohida qoida yozmang: ular ham oddiy nishon sifatida tekshiriladi.
 
-Ish navbatga tushganda agent shu printerning uchta nishonini ro'yxat bilan taqqoslaydi.
-**Bittasi mos kelsa — ruxsat.** Hammasi mos kelmasa — to'sadi.
+## Ruxsatni tekshirish
 
-Normalizatsiya qoidalari:
+Tekshiruv ish navbatga tushganda, mavjud kvota tekshiruvidan keyin, xuddi shu joyda bajariladi:
 
-- **MAC** — harf-raqamdan boshqa belgilar olib tashlanadi, katta harfga o'tkaziladi. Ya'ni
-  `52-54-00-12-34-56`, `525400123456` va `52:54:00:12:34:56` bir xil hisoblanadi.
-- **IP** — bo'sh joylar kesiladi, aynan taqqoslanadi.
-- **Nom** — bo'sh joylar kesiladi, harf registri hisobga olinmaydi (`OrdinalIgnoreCase`).
+1. Xodimning `limit` qiymati `0` bo'lsa, ish to'siladi. Bu bugungi mantiq, o'zgarmaydi.
+2. `allowedPrinters` shu printerga ruxsat bermasa, ish to'siladi.
+3. Aks holda ish chiqadi.
 
-Namuna:
+Printerning uchta qiymati **ish chiqishidan oldin** aniqlanadi. Bittasi ro'yxatga mos kelsa,
+ruxsat beriladi. Hech biri mos kelmasa, ish to'siladi.
+
+| Qiymat | Qayerdan olinadi | Eslatma |
+| --- | --- | --- |
+| Nom | `Win32_Printer.Name` | `printer` maydonidagi qiymat bilan bir xil |
+| IP | Standard TCP/IP port: `Win32_TCPIPPrinterPort.HostAddress`, xost nomi bo'lsa DNS orqali IPv4 | `USB001`, `WSD-...`, `nul:` IP emas, bo'sh qoldiring |
+| MAC | ARP jadvali yoki SNMP | Topilmasa bo'sh. Oddiy holatda IP mos kelgani yetarli |
+
+**Ulashilgan printer** (`\\server\printer`) va manzili aniqlanmagan boshqa navbatlar faqat
+nom bo'yicha tekshiriladi va nom ro'yxatda bo'lmasa to'siladi. Bu ataylab shunday: aks holda
+hamkasbning kichik printerini ulashib, cheklovni chetlab o'tish mumkin bo'lardi.
+
+Normalizatsiya:
+
+- **MAC:** faqat o'n oltilik raqamlar qoldiriladi, katta harfga o'tkaziladi. Server MAC'ni
+  `52:54:00:12:34:56` ko'rinishida yuboradi.
+- **IP:** bo'sh joylar kesiladi, aynan taqqoslanadi.
+- **Nom:** bo'sh joylar kesiladi, harf registri hisobga olinmaydi.
 
 ```csharp
 static string NormalizeMac(string? v) =>
     v is null ? "" : new string(v.Where(Uri.IsHexDigit).ToArray()).ToUpperInvariant();
 
-/// <summary>
-/// `allowedPrinters` ro'yxati shu printerga ruxsat beradimi.
-/// null — serverda fikr yo'q, cheklov qo'llanmaydi.
-/// </summary>
+/// <summary>allowed == null: server fikr bildirmagan, cheklov yo'q.</summary>
 static bool IsPrinterAllowed(
     IReadOnlyList<string>? allowed,
     string? printerMac,
     string? printerIp,
     string printerName)
 {
-    if (allowed is null) return true;                 // fikr yo'q
-    if (allowed.Any(a => a == "*")) return true;      // hammasi ruxsat
-    if (allowed.Count == 0) return false;             // hech qaysi
+    if (allowed is null) return true;
+    if (allowed.Any(a => a == "*")) return true;
+    if (allowed.Count == 0) return false;
 
     var mac = NormalizeMac(printerMac);
     var ip = printerIp?.Trim() ?? "";
@@ -242,7 +164,7 @@ static bool IsPrinterAllowed(
         var token = raw?.Trim();
         if (string.IsNullOrEmpty(token)) continue;
 
-        if (mac.Length > 0 && NormalizeMac(token) == mac) return true;
+        if (mac.Length == 12 && NormalizeMac(token) == mac) return true;
         if (ip.Length > 0 && string.Equals(token, ip, StringComparison.Ordinal)) return true;
         if (name.Length > 0 && string.Equals(token, name, StringComparison.OrdinalIgnoreCase)) return true;
     }
@@ -251,22 +173,30 @@ static bool IsPrinterAllowed(
 }
 ```
 
-E'tibor bering: `NormalizeMac(token)` nishonning o'zini ham normallashtiradi — shunda
-ro'yxatda MAC qanday yozilgan bo'lsa ham ishlaydi. IP nishoni MAC bilan taqqoslanganda
-bo'sh satrga aylanadi, shuning uchun noto'g'ri moslik chiqmaydi (`mac.Length > 0` sharti
-ham shu uchun turibdi).
+Bu namuna kompilyatsiya qilib tekshirilmagan, mantiq uchun berilgan.
 
-## To'sish va serverga hisobot
+### Chekka holatlar
 
-Qaror tartibi — mavjud kvota tekshiruvidan keyin, xuddi shu joyda:
+| Holat | Agent nima qiladi |
+| --- | --- |
+| Server bilan aloqa yo'q | Oxirgi muvaffaqiyatli javobdagi ro'yxat ishlatiladi |
+| Agent qayta ishga tushdi | Ro'yxat diskdagi keshdan olinadi |
+| Birorta ham javob olinmagan | Cheklamaydi. Aloqa uzilgani uchun idora to'xtab qolmasligi kerak |
+| Ro'yxat kutilmagan ko'rinishda (massiv emas, ichida raqam) | Cheklamaydi, jurnalga ogohlantirish yozadi |
+| `periodKey` o'zgardi | Faqat hisoblagichlar nolga tushadi, ro'yxatga ta'sir qilmaydi |
+| Kompyuterda bir necha foydalanuvchi | Mashinaning emas, chop etayotgan xodimning ro'yxati qo'llanadi |
 
-1. Foydalanuvchining `limit` qiymati `0` bo'lsa — to'sish (bu allaqachon ishlab turgan
-   mantiq, o'zgarmaydi).
-2. `allowedPrinters` shu printerga ruxsat bermasa — to'sish.
-3. Aks holda — chiqarishga ruxsat.
+### Sozlamalar
 
-**Yangi ingest maydoni kerak emas.** To'sgan ishni mavjud shaklda yuborish yetarli —
-`POST /api/print-jobs`:
+| Kalit | Qiymat | Nima uchun |
+| --- | --- | --- |
+| `EnablePrintQuotas` | `true` | `allowedPrinters` shu kanal orqali keladi |
+| `CancelJobsOverQuota` | `true` | To'sish mexanizmi yoqilgan bo'lishi kerak |
+| `QuotaSyncIntervalMinutes` | `1` | Admin ro'yxatni o'zgartirsa, agent bir daqiqada biladi |
+
+## To'silgan ish
+
+Ish printerga ketmasdan bekor qilinadi va `POST /api/print-jobs` ga mavjud shaklda yuboriladi:
 
 ```json
 {
@@ -276,153 +206,119 @@ Qaror tartibi — mavjud kvota tekshiruvidan keyin, xuddi shu joyda:
   "printerIp": "192.168.1.52",
   "printerMac": "52:54:00:12:34:58",
   "pages": 0,
-  "timestamp": "2026-11-02T09:16:02.1234567+05:00",
+  "timestamp": "2026-11-09T09:16:02.1234567+05:00",
   "success": false,
-  "reason": "Printer ruxsat etilmagan (guruh siyosati)"
+  "reason": "Canceled by printer policy: this printer is not allowed for this user"
 }
 ```
 
-`reason` matni serverda alohida hisobotga tushadi — "qaysi xodim qaysi ruxsatsiz
-printerdan chiqarishga urindi". Shuning uchun matnni **barqaror** saqlash kerak: bitta
-aniq ibora bo'lsin, har xil variantlar bilan yozilmasin. Tavsiya etilgan matn aynan
-yuqoridagi: `Printer ruxsat etilmagan (guruh siyosati)`.
+- `reason` aynan shu matn bo'lsin, boshqa variantlarsiz. Server urinishlarni shu matn
+  bo'yicha ajratadi.
+- `pages` albatta `0` bo'lsin: server sarfni `pages` yig'indisidan hisoblaydi.
+- Bitta to'silgan ish uchun bitta yozuv yuboriladi. Bekor qilishdan keyin spooler beradigan
+  ikkinchi hodisa alohida yozuv bo'lib ketmasin.
 
-`pages: 0` bo'lishi kerak — qog'oz sarflanmagani uchun. `success: false` yozuv sarf
-hisobiga kirmaydi, lekin jurnalda ko'rinadi.
+**Foydalanuvchiga xabar** mavjud kvota to'sig'idagi usulda chiqadi, matni:
 
-**Foydalanuvchiga xabar:** hozirgi kvota to'sig'idagi mexanizm qanday bo'lsa, shunday
-qoldirilsin (tray xabari yoki shunga o'xshash). Matnda sabab aytilishi muhim — avval
-odamlar nima uchun chiqmaganini bilmay qolgan. Tavsiya: "Bu printerdan chiqarishga
-ruxsatingiz yo'q. Ruxsat etilgan printerlar ro'yxatini ma'muriyatdan so'rang."
+> Bu printerdan chop etishga ruxsatingiz yo'q. Umumiy foydalanish uchun belgilangan
+> printerlardan birini tanlang.
 
-## Chekka holatlar
+## MAC manzil
 
-### Server bilan aloqa yo'q
+`printerMac` serverda printerni tanib olishning asosiy kaliti, shuning uchun noto'g'ri MAC
+bo'sh MAC'dan ancha yomon.
 
-**Oxirgi muvaffaqiyatli javobdagi ro'yxat ishlatiladi** — `limit` bilan bir xil yondashuv.
-Agent qayta ishga tushganda ham ro'yxat saqlanib turishi kerak (diskdagi kesh).
+**Muammo o'lchangan.** Serverdagi 29 ta MAC'dan 15 tasi printerga tegishli bo'lmagan.
+Printerlarning IP'si ko'chgan, eski IP'ni IP-telefonlar egallagan, kompyuterda esa eski
+navbat qolgan. Agent shu navbatga chop etishda ARP'dan telefon MAC'ini olib yuborgan. Bunday
+yozuvlar qo'lda tozalandi, lekin sabab qolgan.
 
-Agent hali birorta javob olmagan bo'lsa (yangi o'rnatilgan mashina, server o'chiq) —
-**cheklamaydi**. Sababi amaliy: aloqa uzilgani uchun butun idorani chiqarishdan to'xtatib
-qo'yish kvota tizimining o'zidan ko'proq zarar keltiradi. Bu ongli qaror, xato emas.
+**Qoida.** Ish hodisasida `printerMac` faqat quyidagi holda yuboriladi, aks holda `null`:
 
-### `periodKey` o'zgarishi
+1. Ish muvaffaqiyatli chiqqan (`success: true`). Telefon chop etishni qabul qilmaydi, shuning
+   uchun bu shart soxta MAC'larning deyarli hammasini kesadi.
+2. Printer ulashilgan navbat emas. `\\server\printer` da ARP chop etish serverining MAC'ini
+   beradi va o'sha serverdagi barcha printerlar bitta qurilma bo'lib qoladi.
 
-`periodKey` faqat hisoblagichlarni nolga tushiradi. **`allowedPrinters` ga ta'sir
-qilmaydi** — ro'yxat davrga bog'liq emas, u faqat yangi javob kelganda yangilanadi.
+Yuqoridagi ruxsat tekshiruvi uchun ARP qiymati ish chiqishidan oldin ham ishlatilaveradi. Bu
+qoida faqat serverga yuboriladigan yozuvga tegishli.
 
-### Ro'yxat qisqarganda
+Format muhim emas: server `52-54-00-12-34-56`, `525400123456` va `5254.0012.3456` ni bir xil
+ko'rinishga keltiradi. USB printerda MAC bo'lmaydi, bu normal.
 
-Admin printerni ro'yxatdan chiqarsa, agent buni keyingi sinxronizatsiyada biladi. Shu
-sababli `QuotaSyncIntervalMinutes: 1` kerak — aks holda o'zgarish 5–10 daqiqa kechikadi.
+## Ortiqcha yozuvlar
 
-### Noto'g'ri yoki tushunarsiz qiymat
+Bu tavsiya, sarf hisobiga ta'sir qilmaydi.
 
-Javobda `allowedPrinters` kutilmagan ko'rinishda kelsa (massiv emas, ichida raqam bor va
-hokazo) — **cheklamaslik** va jurnalga ogohlantirish yozish. Serverdagi xato tufayli chop
-etish to'xtab qolmasligi kerak.
+4-chorakda "Print job was canceled or deleted before completing" sababli 3 186 ta yozuv bor,
+birortasida varaq yo'q. Ularning 3 127 tasida (98%) ayni hujjat shu kompyuterdan 10 daqiqa
+ichida muvaffaqiyatli chiqqan. Ko'pchiligining hujjat nomi `Печать документа`. Eng ko'p
+tarmoqdagi Canon printerlarda uchraydi.
 
-### Bir mashinada bir necha foydalanuvchi
+Bitta chop etish ikki yozuv bo'lib ketayotganga o'xshaydi. Shu sababli dashboardda
+muvaffaqiyat darajasi 69% ko'rinmoqda. Sababini aniqlang va ortiqcha yozuv bo'lsa, yubormang.
+Foydalanuvchi haqiqatan bekor qilgan ishlar yozilishda davom etsin.
 
-Ro'yxat har bir login uchun alohida. Agent `users[]` dan aynan chop etayotgan
-foydalanuvchini topib, uning ro'yxatini qo'llashi kerak — mashinaning emas.
+## Sinash
 
-Login taqqoslashda domen prefiksi hisobga olinmaydi: server `MADANIYAT\E.Turdiyev` ni
-`e.turdiyev` ga keltirib javob qaytaradi. Agent ham shu qoida bilan solishtirishi kerak —
-oxirgi `\` dan keyingi qism, kichik harfda.
+Agentni haqiqiy serverda boshqa xodimlarga ta'sir qilmasdan sinash mumkin. Admin sinov
+loginini dashboardda "Ma'lum printerlar" guruhiga qo'shadi. Cheklov o'chiq turganda ham shu
+login uchun javobda aniq ro'yxat keladi, qolganlarga `["*"]` ketaveradi.
 
-## 3-o'zgarish — `appsettings.json`
+Topshirishdan oldin tekshiring:
 
-| Kalit | Qiymat | Nima uchun |
-| --- | --- | --- |
-| `EnablePrintQuotas` | `true` | Kvota almashinuvi yoqilgan bo'lishi kerak — `allowedPrinters` shu kanal orqali keladi |
-| `CancelJobsOverQuota` | `true` | To'sish mexanizmi yoqilgan bo'lsin |
-| `QuotaSyncIntervalMinutes` | `1` | Admin ro'yxatni o'zgartirganda agent 1 daqiqada biladi |
-
-`QuotaSyncIntervalMinutes: 1` yuk tug'dirmaydi — o'lchab chiqilgan: bitta almashinuv
-≈ 416 bayt, 189 mashina 1 daqiqalik interval bilan sekundiga 3,1 so'rov va bir mashinaga
-kuniga ≈ 585 KB. Server uchun bu sezilarsiz.
-
-Boshqa sozlamalar o'zgarmaydi.
+- [ ] `["*"]`: barcha printerlardan chiqadi
+- [ ] Maydon yo'q yoki `null`: yuqori qismdagi ro'yxat, u ham yo'q bo'lsa cheklovsiz
+- [ ] `[]`: hech qaysi printerdan chiqmaydi
+- [ ] Ro'yxatda MAC bor va printerning MAC'i mos: chiqadi
+- [ ] Ro'yxatda `52-54-00-12-34-56`, printerda `52:54:00:12:34:56`: chiqadi
+- [ ] MAC topilmadi, lekin IP ro'yxatda bor: chiqadi
+- [ ] Ro'yxatda `kyocera m2040dn`, printer nomi `Kyocera M2040dn`: chiqadi
+- [ ] Hech bir nishon mos kelmaydi: ish printerga bormasdan bekor qilinadi
+- [ ] `\\server\printer` navbati, nomi ro'yxatda yo'q: to'siladi
+- [ ] USB printer, nomi ro'yxatda yo'q: to'siladi
+- [ ] `Microsoft Print to PDF` ro'yxatda bor: chiqadi, yo'q: to'siladi
+- [ ] To'silgan ish `success: false`, `pages: 0` va aynan belgilangan `reason` bilan bitta
+      yozuv bo'lib keladi
+- [ ] Foydalanuvchi sababni ko'radi
+- [ ] Ikki xodimga ikki xil ro'yxat: har biri o'z ro'yxati bilan cheklanadi
+- [ ] `MADANIYAT\E.Turdiyev` javobdagi `e.turdiyev` qatoriga mos keladi
+- [ ] Server o'chiq: oxirgi ro'yxat ishlatiladi
+- [ ] Agent qayta ishga tushdi, server o'chiq: keshdagi ro'yxat ishlatiladi
+- [ ] Hech qachon javob olinmagan: cheklanmaydi
+- [ ] `[123]` kabi noto'g'ri qiymat: cheklanmaydi, jurnalga yoziladi
+- [ ] `periodKey` o'zgardi: hisoblagich nolga tushdi, ro'yxat o'zgarmadi
+- [ ] Muvaffaqiyatsiz ishda va ulashilgan navbatda `printerMac` yuborilmaydi
+- [ ] `/api/agent-status` da yangi versiya raqami ko'rinadi
 
 ## Chiqarish tartibi
 
-1. **Server — bajarildi (2026-yil 2-noyabr).** `allowedPrinters` javobga qo'shildi va
-   serverda ishlab turibdi, boshida hamma uchun `["*"]`. Eski agentlar notanish maydonni
-   e'tiborsiz qoldiradi, shuning uchun flotda hech narsa o'zgarmadi. **Ya'ni siz hoziroq
-   haqiqiy serverga so'rov yuborib javobni ko'rishingiz mumkin.**
-2. **Agent** — yangi versiya tayyorlanadi va bir-ikki mashinada sinaladi.
-3. **Umumiy printerlar** — admin umumiy printerlarni belgilab, cheklovni yoqadi. Shundan
-   keyin yuqoridagi umumiy `allowedPrinters` `["*"]` emas, shu printerlarning ro'yxati
-   bo'ladi va ro'yxatda alohida ko'rsatilmagan hammaga qo'llanadi.
-4. **Istisnolar** — admin guruh tuzadi: "barcha printerlar" (`["*"]`) yoki "ma'lum
-   printerlar" (umumiylar va guruhda belgilanganlar).
+1. Yangi versiya bir-ikki kompyuterda sinov logini bilan tekshiriladi.
+2. Versiya barcha kompyuterlarga tarqatiladi. Cheklov o'chiq, hammaga `["*"]` ketadi, shuning
+   uchun hech narsa o'zgarmaydi.
+3. Admin dashboardning Agentlar sahifasida yangi versiya tarqalganini ko'radi va cheklovni
+   yoqadi.
 
-Tarmoq printeri ro'yxatda MAC va joriy IP bilan keladi, drayver nomi faqat USB va virtual
-printerlar uchun keladi. `users[]` dagi qatorda `allowedPrinters` `null` bo'lsa, yuqoridagi
-umumiy ro'yxat qo'llanadi.
+Yangilanmagan kompyuterlar cheklamaydi, lekin sarf hisobi ularda ham to'g'ri ishlaydi. Server
+qaysi agent ro'yxatni qo'llayotganini versiya raqamidan biladi, shuning uchun versiyani oshirish
+majburiy.
 
-Yana bir narsa o'zgardi: `limit: 0` endi faqat xodimni qo'lda bloklashdan emas, guruh
-siyosatidan ham kelishi mumkin ("umuman chiqarmaydi" darajasi). Agent uchun farqi yo'q —
-ikkisi ham bir xil maydon orqali keladi va bugungi versiya ularni allaqachon to'g'ri
-bajaradi.
+Muammo chiqsa, admin cheklovni o'chiradi va agentlar bir daqiqa ichida `["*"]` oladi. Agentni
+qaytarib o'rnatish shart emas.
 
-Ya'ni agentni butun flotga bir vaqtda yoyish shart emas: yangilanmagan mashinalar
-oddiygina cheklamaydi, lekin sarf hisobi ularda ham to'g'ri ishlaydi.
+## Ma'lumot uchun
 
-Teskari tomoni ham ishlaydi — agar yangi agent muammo chiqarsa, serverda umumiy
-`allowedPrinters` ni `["*"]` ga qaytarish kifoya; agentni qaytarib o'rnatish kerak emas.
-
-## Qabul testlari
-
-Topshirishdan oldin shu holatlar tekshirilsin:
-
-- [ ] `allowedPrinters: ["*"]` — barcha printerlardan chiqadi
-- [ ] Maydon umuman yuborilmadi — barcha printerlardan chiqadi (eski xatti-harakat)
-- [ ] `allowedPrinters: []` — hech qaysi printerdan chiqmaydi
-- [ ] Ro'yxatda MAC bor, printerning MAC si mos — chiqadi
-- [ ] Ro'yxatda MAC `52-54-00-12-34-56` ko'rinishida, printerda `52:54:00:12:34:56` —
-      chiqadi (normalizatsiya ishlayapti)
-- [ ] Ro'yxatda faqat IP bor, printerda MAC ham bor — IP mos kelsa chiqadi
-- [ ] Ro'yxatda printer nomi `kyocera m2040dn` (kichik harfda), printerda
-      `Kyocera M2040dn` — chiqadi
-- [ ] Ro'yxatdagi hech bir nishon mos kelmaydi — ish bekor qilinadi
-- [ ] Bekor qilingan ish serverga `success: false`, `pages: 0`, barqaror `reason` bilan
-      yuboriladi
-- [ ] Foydalanuvchi ekranida sabab ko'rinadigan xabar chiqadi
-- [ ] `users[]` da ikki login bor, har biriga boshqa ro'yxat — har biri o'z ro'yxati bilan
-      cheklanadi
-- [ ] `MADANIYAT\E.Turdiyev` bilan kirgan foydalanuvchi javobdagi `e.turdiyev` qatoriga
-      to'g'ri moslanadi
-- [ ] Serverga aloqa uzildi — oxirgi ro'yxat ishlatiladi
-- [ ] Agent qayta ishga tushdi, server o'chiq — keshdagi ro'yxat ishlatiladi
-- [ ] Umuman birorta javob olinmagan — cheklov qo'llanmaydi
-- [ ] `allowedPrinters` ichida kutilmagan tur (masalan `[123]`) — cheklanmaydi, jurnalga
-      ogohlantirish yoziladi
-- [ ] `periodKey` o'zgardi — hisoblagich nolga tushdi, ro'yxat o'zgarmadi
-- [ ] MAC to'ldirilayotgan bo'lsa: tarmoq printerida MAC bor, USB printerida bo'sh —
-      ikkisi ham xatosiz yuboriladi
-
-## Ma'lumot uchun — agent ishlatadigan endpointlar
-
-Asosiy manzil: `https://print.madaniyhayot.uz`. Hammasi `Bearer` token bilan, o'zgarish
-yo'q.
+Asosiy manzil: `https://print.madaniyhayot.uz`. Barcha so'rovlar `X-Api-Key` sarlavhasi bilan.
 
 | Endpoint | Vazifa | Shu ishda o'zgaradimi |
 | --- | --- | --- |
-| `POST /api/print-jobs` | Chop etish hodisalari paketi | Shakli o'zgarmaydi (`printerMac` to'liqroq, `printerPort` qo'shilsa yaxshi) |
-| `POST /api/print-quotas` | Sarfni bildirish + limitlarni olish | **Ha** — javobga `allowedPrinters` qo'shiladi |
-| `POST /api/agent-status` | Tiriklik signali | Yo'q |
+| `POST /api/print-jobs` | Chop etish hodisalari paketi | Shakli yo'q, `printerMac` qoidasi o'zgaradi |
+| `POST /api/print-quotas` | Sarfni bildirish va ruxsatlarni olish | Yo'q, `allowedPrinters` javobda bor |
+| `POST /api/agent-status` | Tiriklik signali | Yo'q, yangi versiya raqami yuboriladi |
 
-Bitta paketdagi hodisalar chegarasi — 60 000. Agentning mahalliy buferi standart holatda
-50 000, shuning uchun uzilishdan keyin butun bufer bitta paketda yuborilsa ham o'tadi.
+Bitta paketda eng ko'pi 60 000 hodisa. Paketdagi bitta noto'g'ri hodisa (masalan, manfiy
+`pages`) butun paketni rad ettiradi (`422`), shuning uchun yuborishdan oldin maydonlarni
+tekshiring.
 
-### Savollar
-
-Shartnomada tushunarsiz joy bo'lsa yoki boshqa yondashuv qulayroq ko'rinsa — yozib
-yuboring, server tomonini moslashtirish mumkin. Ayniqsa quyidagilar muhokamaga ochiq:
-
-- nishon turini aniq ko'rsatish kerak bo'lsa (`{"kind": "mac", "value": "…"}` ko'rinishida)
-  — server shunday ham yubora oladi;
-- ro'yxat juda uzun bo'lib ketsa (yuzlab printer) — "man etilganlar" ro'yxatiga o'tish
-  mumkin.
+Noaniq joy bo'lsa yoki boshqa yondashuv qulayroq bo'lsa, yozing: server tomonini moslashtirish
+mumkin.
