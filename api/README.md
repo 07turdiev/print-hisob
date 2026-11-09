@@ -212,12 +212,27 @@ pip install -r requirements-dev.txt
 pytest
 ```
 
-Testlar bazasiz ishlaydi — sessiya stub bilan almashtiriladi.
+Asosiy testlar bazasiz ishlaydi: sessiya stub bilan almashtiriladi, SQL bajarilmaydi.
 
-## Prod eslatmasi
+`tests/test_pg_*.py` haqiqiy Postgres'da ishlaydi va agent shartnomasini, printer
+identifikatsiyasini hamda migratsiyalarni tekshiradi. Ular `TEST_DATABASE_URL` berilganda
+ishga tushadi, baza nomida `test` so'zi bo'lishi shart, chunki har test jadvallarni tozalaydi:
 
-`AUTO_CREATE_TABLES=true` ishga tushganda jadvalni yaratadi. Prod'da uni `false` qilib,
-sxema o'zgarishlarini Alembic migratsiyalari orqali boshqaring.
+```bash
+docker run -d --name ph-test -e POSTGRES_PASSWORD=test -e POSTGRES_DB=ph_test -p 55433:5432 postgres:16
+TEST_DATABASE_URL=postgresql+asyncpg://postgres:test@localhost:55433/ph_test pytest
+```
+
+## Baza sxemasi
+
+Sxema `migrations/` dagi Alembic migratsiyalari bilan boshqariladi. Model o'zgarganda:
+
+```bash
+alembic revision --autogenerate -m "qisqa tavsif"
+```
+
+Hosil bo'lgan faylni tekshiring. Deploy tartibi: [deploy/README.md](../deploy/README.md).
+`AUTO_CREATE_TABLES=true` faqat lokal ishlab chiqish uchun.
 
 ## Jadval
 

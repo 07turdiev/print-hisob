@@ -98,27 +98,28 @@ async def _save_state(
     bilan bir xil yondashuv. Bizning javobimiz ham yoziladi, shunda keyingi
     so'rovda agent uni qo'llaganini (yoki qo'llamaganini) ko'rish mumkin.
     """
-    rows = []
+    # Kalit normallashtirilgan login: bitta odam so'rovda ikki xil yozilishi mumkin
+    # (`MADANIYAT\x` va `x`), bitta INSERT'da takrorlansa `ON CONFLICT` yiqiladi.
+    rows_by_login: dict[str, dict] = {}
     for item in payload.users:
         login = normalize_login(item.user)
         if not login:
             continue
         answer = served.get(login)
-        rows.append(
-            {
-                "computer": payload.computer,
-                "login": login,
-                "raw_user": item.user,
-                "period_key": key,
-                "pages_used_here": item.pages_used_here,
-                "pages_used_reported": item.pages_used,
-                "applied_limit": item.limit,
-                "served_limit": answer.limit if answer else None,
-                "served_used": answer.used if answer else None,
-                "reported_at": reported_at,
-            }
-        )
+        rows_by_login[login] = {
+            "computer": payload.computer,
+            "login": login,
+            "raw_user": item.user,
+            "period_key": key,
+            "pages_used_here": item.pages_used_here,
+            "pages_used_reported": item.pages_used,
+            "applied_limit": item.limit,
+            "served_limit": answer.limit if answer else None,
+            "served_used": answer.used if answer else None,
+            "reported_at": reported_at,
+        }
 
+    rows = list(rows_by_login.values())
     if not rows:
         return
 
