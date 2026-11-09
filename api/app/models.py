@@ -422,3 +422,37 @@ class PrinterGroupMember(Base):
     login: Mapped[str] = mapped_column(String(255))
 
     __table_args__ = (UniqueConstraint("login", name="uq_printer_group_members_login"),)
+
+
+class PublicPrinter(Base):
+    """Barcha xodimlar chiqara oladigan umumiy printer.
+
+    Bu standart qoidaning o'zi: guruhga kirmagan xodim, cheklov yoqilganda, faqat
+    shu ro'yxatdagi qurilmalardan chiqaradi. `allowed` siyosatli guruh esa shu
+    ro'yxat ustiga o'z printerlarini qo'shadi.
+
+    Alohida jadval: yangi jadvalni `create_all` o'zi yaratadi, mavjud jadvalga
+    ustun qo'shish esa prodda qo'lda `ALTER` talab qilardi.
+    """
+
+    __tablename__ = "public_printers"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    device_id: Mapped[int] = mapped_column(BigInteger, unique=True)
+
+
+class PrinterAccessSetting(Base):
+    """Printer cheklovining umumiy sozlamasi — jadvalda bitta qator (`id=1`).
+
+    `restrict_default` o'chiq bo'lsa guruhsiz xodimlar hamma printerdan chiqaradi.
+    Tugma bazada turadi, `.env` da emas: muammo chiqsa admin xizmatni qayta
+    ishga tushirmasdan cheklovni olib tashlay oladi.
+    """
+
+    __tablename__ = "printer_access_settings"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    restrict_default: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )

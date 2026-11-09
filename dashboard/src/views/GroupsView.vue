@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import type { PrinterGroup, PrinterGroupPolicy } from '../api/types'
 import { usePrinterGroupsPage } from '../composables/usePrinterGroupsPage'
 import { usePolicyViolations } from '../composables/usePolicyViolations'
@@ -18,23 +18,66 @@ const {
   rowErrors,
   creating,
   createError,
+  access,
+  savingAccess,
+  accessError,
+  saveAccess,
   create,
   save,
   remove,
 } = usePrinterGroupsPage()
 
 const POLICIES: { value: PrinterGroupPolicy; label: string; hint: string }[] = [
-  { value: 'all', label: "To'liq ruxsat", hint: 'Barcha printerlardan chiqaradi' },
+  { value: 'all', label: 'Barcha printerlar', hint: 'Istisno: istalgan printerdan chiqaradi' },
   {
     value: 'allowed',
-    label: 'Faqat belgilangan',
-    hint: 'Quyida belgilangan printerlardan chiqaradi',
+    label: "Ma'lum printerlar",
+    hint: 'Istisno: umumiy printerlar va quyida belgilanganlardan chiqaradi',
   },
   { value: 'none', label: 'Chiqarmaydi', hint: 'Hech qaysi printerdan chiqara olmaydi' },
 ]
 
 function policyLabel(policy: PrinterGroupPolicy): string {
   return POLICIES.find((p) => p.value === policy)?.label ?? policy
+}
+
+function sameList(a: readonly (string | number)[], b: readonly (string | number)[]): boolean {
+  return a.length === b.length && [...a].sort().join('|') === [...b].sort().join('|')
+}
+
+// --- Standart qoida ---
+const draftPublic = ref<(string | number)[]>([])
+const draftRestrict = ref(false)
+
+watch(
+  access,
+  (current) => {
+    draftPublic.value = [...current.publicDeviceIds]
+    draftRestrict.value = current.restrictDefault
+  },
+  { immediate: true },
+)
+
+const accessDirty = computed(
+  () =>
+    draftRestrict.value !== access.value.restrictDefault ||
+    !sameList(draftPublic.value, access.value.publicDeviceIds),
+)
+
+/** Umumiy printersiz cheklov hammani to'xtatib qo'ygan bo'lardi. */
+const accessInvalid = computed(() => draftRestrict.value && draftPublic.value.length === 0)
+
+async function submitAccess() {
+  try {
+    await saveAccess({
+      restrictDefault: draftRestrict.value,
+      publicDeviceIds: draftPublic.value.map(Number),
+    })
+    // Umumiy ro'yxat o'zgarsa, hisobotdagi buzilishlar ham o'zgaradi.
+    reloadViolations()
+  } catch {
+    // Xato panel ichida ko'rsatiladi.
+  }
 }
 
 // --- Yangi guruh ---
@@ -85,8 +128,6 @@ const pickableEmployees = computed(() => {
 const dirty = computed(() => {
   const g = openGroup.value
   if (!g) return false
-  const sameList = (a: readonly (string | number)[], b: readonly (string | number)[]) =>
-    a.length === b.length && [...a].sort().join('|') === [...b].sort().join('|')
   return (
     draftName.value.trim() !== g.name ||
     draftPolicy.value !== g.policy ||
@@ -95,9 +136,12 @@ const dirty = computed(() => {
   )
 })
 
-/** `allowed` tanlangan, lekin printer belgilanmagan — bu hammani to'sadi. */
+/** `allowed` tanlangan, lekin na umumiy, na qo'shimcha printer bor — bu a'zolarni to'sadi. */
 const emptyAllowed = computed(
-  () => draftPolicy.value === 'allowed' && draftDevices.value.length === 0,
+  () =>
+    draftPolicy.value === 'allowed' &&
+    draftDevices.value.length === 0 &&
+    access.value.publicDeviceIds.length === 0,
 )
 
 async function submitEdit() {
@@ -168,8 +212,9 @@ function when(iso: string): string {
     <p class="alert alert--info">
       <span class="alert__icon"><AppIcon name="info" :size="16" /></span>
       <span>
-        Guruhga kirmagan xodim barcha printerlardan chiqaradi — cheklov faqat guruh orqali
-        qo'yiladi. Bir xodim bir vaqtda faqat bitta guruhda bo'ladi.
+        Guruhga kirmagan xodim standart qoidaga bo'ysunadi: cheklov yoqilgan bo'lsa faqat umumiy
+        printerlardan chiqaradi. Guruh shu qoidadan istisno. Bir xodim bir vaqtda faqat bitta
+        guruhda bo'ladi.
       </span>
     </p>
 
@@ -177,7 +222,7 @@ function when(iso: string): string {
       <span class="alert__icon"><AppIcon name="clock" :size="16" /></span>
       <span>
         <strong>Chiqarmaydi</strong> darajasi bugundan ishlaydi — u xodimni bloklash bilan bir
-        xil kanaldan o'tadi. <strong>Faqat belgilangan</strong> esa agent yangilanganidan keyin
+        xil kanaldan o'tadi. Printer ro'yxati bo'yicha cheklov esa agent yangilanganidan keyin
         kuchga kiradi; hozircha u faqat hisobotda ko'rinadi.
       </span>
     </p>
@@ -186,7 +231,68 @@ function when(iso: string): string {
       <header class="panel__head">
         <h2 class="panel__title">
           <span class="panel__title-icon"><AppIcon name="shield" :size="16" /></span>
-          Yangi guruh
+          Umumiy printerlar
+        </h2>
+        <span class="panel__count">
+          {{ access.publicDeviceIds.length }} ta printer ·
+          {{ access.restrictDefault ? 'cheklov yoqilgan' : "cheklov o'chiq" }}
+        </span>
+      </header>
+
+      <div class="editor editor--flat">
+        <div class="field">
+          <span class="field__label">Barcha xodimlar chiqara oladigan printerlar</span>
+          <PickerList
+            :items="printers"
+            :key-of="(p) => p.id"
+            :label="(p) => p.displayName"
+            :sublabel="(p) => p.lastIp"
+            :selected="draftPublic"
+            :disabled="savingAccess"
+            placeholder="Printer nomi bo'yicha qidirish"
+            empty-text="Reyestrda printer yo'q"
+            @update:selected="draftPublic = $event"
+          />
+          <p class="field__hint">
+            Microsoft Print to PDF kabi virtual printerlarni ham shu yerda belgilang, aks holda
+            PDF'ga saqlash ham to'siladi.
+          </p>
+        </div>
+
+        <label class="radio">
+          <input v-model="draftRestrict" type="checkbox" :disabled="savingAccess" />
+          <span>
+            <span class="radio__label">Boshqa printerlarni cheklash</span>
+            <span class="radio__hint">
+              Guruhga kirmagan xodim faqat yuqoridagi printerlardan chiqaradi. O'chirilsa hamma
+              avvalgidek ishlaydi.
+            </span>
+          </span>
+        </label>
+
+        <p v-if="accessInvalid" class="row-error">
+          Avval umumiy printerlarni belgilang, aks holda hech kim chop eta olmaydi.
+        </p>
+        <p v-if="accessError" class="row-error">{{ accessError }}</p>
+
+        <div class="editor__actions">
+          <button
+            type="button"
+            class="btn btn--primary"
+            :disabled="!accessDirty || accessInvalid || savingAccess"
+            @click="submitAccess"
+          >
+            Saqlash
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <header class="panel__head">
+        <h2 class="panel__title">
+          <span class="panel__title-icon"><AppIcon name="shield" :size="16" /></span>
+          Yangi istisno guruhi
         </h2>
       </header>
 
@@ -195,7 +301,7 @@ function when(iso: string): string {
           v-model="newName"
           type="text"
           class="create__name"
-          placeholder="Guruh nomi — masalan: Kotibiyat"
+          placeholder="Guruh nomi — masalan: Vazir o'rinbosarlari"
           :disabled="creating"
         />
         <select v-model="newPolicy" class="create__policy" :disabled="creating">
@@ -300,7 +406,7 @@ function when(iso: string): string {
             </fieldset>
 
             <div v-if="draftPolicy === 'allowed'" class="field">
-              <span class="field__label">Ruxsat etilgan printerlar</span>
+              <span class="field__label">Umumiy printerlarga qo'shimcha ruxsat</span>
               <p v-if="emptyAllowed" class="row-error">
                 Birorta printer belgilanmagan — bu holatda guruh a'zolari hech qaysi printerdan
                 chiqara olmaydi.
@@ -383,7 +489,7 @@ function when(iso: string): string {
       </p>
 
       <div v-else-if="!violations.length && !violationsLoading" class="empty-block">
-        Tanlangan davrda guruh siyosati buzilmagan.
+        Tanlangan davrda ruxsat etilmagan printerdan chiqarilmagan.
       </div>
 
       <div v-else class="table-wrap">
@@ -531,6 +637,11 @@ function when(iso: string): string {
   color: var(--color-danger-fg);
 }
 
+.badge--default {
+  background: var(--color-surface-2);
+  color: var(--color-text-muted);
+}
+
 .editor {
   display: flex;
   flex-direction: column;
@@ -538,6 +649,11 @@ function when(iso: string): string {
   padding: var(--space-3) var(--space-4) var(--space-4);
   border-top: 1px dashed var(--color-border);
   background: var(--color-surface-2);
+}
+
+.editor--flat {
+  border-top: none;
+  background: transparent;
 }
 
 .field {

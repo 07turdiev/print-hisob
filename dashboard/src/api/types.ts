@@ -193,9 +193,26 @@ export interface PrinterMergeSuggestion {
 }
 
 /**
- * Guruh siyosati:
+ * Standart printer qoidasi (GET/PUT /api/printer-access).
+ *
+ * `restrictDefault` yoqilganda guruhsiz xodim faqat umumiy printerlardan
+ * chiqaradi. Guruhlar shu qoidadan istisno.
+ */
+export interface PrinterAccess {
+  restrictDefault: boolean
+  publicDeviceIds: number[]
+}
+
+/** Yuborilmagan maydon tegilmaydi, `publicDeviceIds` ro'yxatni almashtiradi. */
+export interface PrinterAccessPatch {
+  restrictDefault?: boolean
+  publicDeviceIds?: number[]
+}
+
+/**
+ * Guruh siyosati (standart qoidadan istisno):
  * - `all` — barcha printerlar;
- * - `allowed` — faqat belgilangan qurilmalar;
+ * - `allowed` — umumiy printerlar va guruhda belgilanganlar;
  * - `none` — umuman chiqara olmaydi.
  */
 export type PrinterGroupPolicy = 'all' | 'allowed' | 'none'
@@ -233,7 +250,8 @@ export interface PolicyViolation {
   fullName: string | null
   department: string | null
   groupName: string
-  policy: PrinterGroupPolicy
+  /** `default` — guruhsiz xodim, unga standart qoida qo'llangan. */
+  policy: PrinterGroupPolicy | 'default'
   deviceId: number | null
   printerName: string
   pages: number

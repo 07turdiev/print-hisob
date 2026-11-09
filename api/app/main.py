@@ -383,7 +383,13 @@ async def ingest_print_jobs(
         for (mac, ip, name), row in printer_updates.items():
             await printer_registry.ensure_device(
                 session,
-                printer_registry.JobPrinter(mac=mac, ip=ip, name=name, seen_at=row["printed_at"]),
+                printer_registry.JobPrinter(
+                    mac=mac,
+                    ip=ip,
+                    name=name,
+                    seen_at=row["printed_at"],
+                    success=row["success"],
+                ),
             )
 
         for start in range(0, len(rows), CHUNK_SIZE):

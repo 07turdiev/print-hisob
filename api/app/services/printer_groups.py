@@ -1,27 +1,30 @@
-r"""Xodimlar guruhlari va printer ruxsatlari.
+r"""Standart printer qoidasi, istisno guruhlari va printer ruxsatlari.
 
-**Uch daraja.** Guruh bitta siyosatga ega bo'ladi:
+**Standart qoida.** Admin "umumiy printerlar" ro'yxatini tuzadi va cheklovni
+yoqadi. Shundan keyin guruhga kirmagan xodim faqat shu printerlardan chiqaradi.
+Cheklov o'chiq turganda hamma avvalgidek ishlaydi.
 
-* `all` — to'liq ruxsat;
-* `allowed` — faqat belgilangan qurilmalar;
+**Guruh — istisno.** Guruh bitta siyosatga ega bo'ladi:
+
+* `all` — barcha printerlar;
+* `allowed` — umumiy printerlar va guruhda belgilangan qurilmalar;
 * `none` — umuman chop eta olmaydi.
 
 **Nega shunday taqsimlangan.** `none` yangi mexanizm talab qilmaydi: agentga
 mavjud `limit: 0` orqali yetadi, ya'ni bu bugun ishlab turgan "Bloklash" bilan
-bir xil kanal. `allowed` esa agentdagi `allowedPrinters` qo'llanmasi chiqqandan
-keyin kuchga kiradi — shu vaqtgacha u faqat hisobotda ko'rinadi ("ruxsat
-etilmagan printerdan chiqardi").
+bir xil kanal. Printer ro'yxati bo'yicha cheklov esa agentdagi `allowedPrinters`
+qo'llanmasi chiqqandan keyin kuchga kiradi — shu vaqtgacha u faqat hisobotda
+ko'rinadi ("ruxsat etilmagan printerdan chiqardi").
 
 **Bir xodim — bitta guruh.** Cheklov baza darajasida (`uq_printer_group_members_login`).
 Aks holda "bu odamga nima ruxsat etilgan" degan savolga javob guruhlarni
 qo'shish qoidasiga bog'liq bo'lib qolardi va sabab topish qiyinlashardi.
-
-**Guruhga kirmagan xodim cheklanmaydi.** Cheklov faqat ongli ravishda qo'yiladi,
-shuning uchun guruh tuzilmagan paytda hamma ishlashda davom etadi.
 """
 
 from __future__ import annotations
 
+import logging
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -32,14 +35,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.logins import SQL_DOMAIN_PREFIX_PATTERN, normalize_login
 from app.models import (
     Employee,
+    PrinterAccessSetting,
     PrinterAlias,
     PrinterDevice,
     PrinterGroup,
     PrinterGroupMember,
     PrinterGroupPrinter,
     PrintJob,
+    PublicPrinter,
 )
 from app.services import printers
+
+logger = logging.getLogger(__name__)
 
 # `status.HTTP_422_UNPROCESSABLE_ENTITY` starlette'da eskirgan; `main.py` dagi
 # konventsiya bilan bir xil — sonni to'g'ridan-to'g'ri ishlatamiz.
@@ -50,8 +57,34 @@ ALLOWED = "allowed"
 NONE = "none"
 POLICIES = (ALL, ALLOWED, NONE)
 
+# Hisobotda guruhsiz xodimning siyosati. Guruhga berib bo'lmaydi.
+DEFAULT = "default"
+NO_GROUP_LABEL = "Guruhsiz"
+
 # Agent shartnomasidagi "barcha printerlar" belgisi.
 ANY_PRINTER = "*"
+
+# `printer_access_settings` jadvalidagi yagona qator.
+_SETTINGS_ID = 1
+
+
+@dataclass(frozen=True)
+class DefaultAccess:
+    """Standart qoida: cheklov holati va umumiy printerlar."""
+
+    restrict: bool
+    device_ids: tuple[int, ...]
+    tokens: tuple[str, ...]
+
+    def allowed_printers(self) -> list[str]:
+        """Guruhsiz xodimga yuboriladigan ro'yxat.
+
+        Cheklov yoqilgan-u nishon topilmasa `["*"]` qaytadi: server tomonidagi
+        ma'lumot xatosi butun idorani chop etishdan to'xtatib qo'ymasligi kerak.
+        """
+        if self.restrict and self.tokens:
+            return list(self.tokens)
+        return [ANY_PRINTER]
 
 
 @dataclass(frozen=True)
@@ -185,31 +218,150 @@ async def list_groups(session: AsyncSession) -> list[GroupRow]:
     ]
 
 
-async def _tokens_by_group(session: AsyncSession) -> dict[int, tuple[str, ...]]:
-    """Har bir guruh uchun agentga yuboriladigan nishonlar ro'yxati.
+def device_tokens(aliases: Iterable[tuple[str, str]], last_ip: str | None) -> list[str]:
+    """Bitta qurilma uchun agentga yuboriladigan nishonlar.
 
-    Bitta qurilmaning barcha nishonlari kiradi (MAC, IP va drayver nomlari),
-    chunki agent ish navbatga tushganda qaysi nishonni ko'rishini oldindan
-    bilmaymiz: bir kompyuterda MAC, boshqasida faqat nom ko'rinadi.
+    `aliases` — `(kind, value)` juftliklari. Hamma nishon yuborilmaydi:
+
+    * MAC'lar yuboriladi. Birlashtirishdan keyin ular orasida eski yoki soxta
+      MAC bo'lishi mumkin, lekin ular boshqa printerga tegishli emas.
+    * IP faqat joriysi (`last_ip`). Eski IP'ni keyin boshqa printer olgan
+      bo'lishi mumkin va u ham ruxsat olib qolardi. Joriy IP noma'lum bo'lsagina
+      barcha IP nishonlari ishlatiladi.
+    * Nom faqat MAC ham, IP ham bo'lmaganda (USB va virtual printerlar). Nom
+      ishonchsiz: bir xil nom turli printerlarda uchraydi.
     """
-    rows = (
+    pairs = list(aliases)
+    macs = [value for kind, value in pairs if kind == printers.MAC]
+    ips = [value for kind, value in pairs if kind == printers.IP]
+    names = [value for kind, value in pairs if kind == printers.NAME]
+
+    current_ips = [last_ip] if last_ip and printers.is_ip(last_ip) else ips
+    return (macs + current_ips) or names
+
+
+async def _tokens_by_device(
+    session: AsyncSession, device_ids: list[int]
+) -> dict[int, tuple[str, ...]]:
+    """Berilgan qurilmalarning agentga yuboriladigan nishonlari."""
+    if not device_ids:
+        return {}
+
+    alias_rows = (
         await session.execute(
-            select(PrinterGroupPrinter.group_id, PrinterAlias.value)
-            .join(PrinterAlias, PrinterAlias.device_id == PrinterGroupPrinter.device_id)
-            .order_by(PrinterGroupPrinter.group_id, PrinterAlias.value)
+            select(PrinterAlias.device_id, PrinterAlias.kind, PrinterAlias.value)
+            .where(PrinterAlias.device_id.in_(device_ids))
+            .order_by(PrinterAlias.device_id, PrinterAlias.kind, PrinterAlias.value)
         )
     ).all()
+    ip_rows = (
+        await session.execute(
+            select(PrinterDevice.id, PrinterDevice.last_ip).where(PrinterDevice.id.in_(device_ids))
+        )
+    ).all()
+    last_ip = {device_id: ip for device_id, ip in ip_rows}
+
+    aliases: dict[int, list[tuple[str, str]]] = {}
+    for device_id, kind, value in alias_rows:
+        aliases.setdefault(device_id, []).append((kind, value))
+    return {
+        device_id: tuple(device_tokens(pairs, last_ip.get(device_id)))
+        for device_id, pairs in aliases.items()
+    }
+
+
+async def _tokens_by_group(session: AsyncSession) -> dict[int, tuple[str, ...]]:
+    """Har bir guruhning o'z qurilmalari uchun nishonlar ro'yxati."""
+    pairs = [
+        (group_id, device_id)
+        for group_id, device_id in (
+            await session.execute(
+                select(PrinterGroupPrinter.group_id, PrinterGroupPrinter.device_id).order_by(
+                    PrinterGroupPrinter.group_id, PrinterGroupPrinter.device_id
+                )
+            )
+        ).all()
+    ]
+    tokens = await _tokens_by_device(session, sorted({device_id for _, device_id in pairs}))
 
     by_group: dict[int, list[str]] = {}
-    for group_id, value in rows:
-        by_group.setdefault(group_id, []).append(value)
+    for group_id, device_id in pairs:
+        by_group.setdefault(group_id, []).extend(tokens.get(device_id, ()))
     return {gid: tuple(dict.fromkeys(values)) for gid, values in by_group.items()}
 
 
-async def policy_by_login(session: AsyncSession) -> dict[str, LoginPolicy]:
+async def public_device_ids(session: AsyncSession) -> list[int]:
+    """Umumiy printerlar ro'yxati."""
+    rows = (
+        await session.execute(select(PublicPrinter.device_id).order_by(PublicPrinter.device_id))
+    ).scalars()
+    return [int(device_id) for device_id in rows.all()]
+
+
+async def default_access(session: AsyncSession) -> DefaultAccess:
+    """Standart qoidani o'qiydi: cheklov holati, umumiy printerlar va nishonlari."""
+    setting = await session.get(PrinterAccessSetting, _SETTINGS_ID)
+    device_ids = await public_device_ids(session)
+    by_device = await _tokens_by_device(session, device_ids)
+    tokens = tuple(
+        dict.fromkeys(token for device_id in device_ids for token in by_device.get(device_id, ()))
+    )
+    restrict = bool(setting and setting.restrict_default)
+    if restrict and not tokens:
+        logger.warning("printer cheklovi yoqilgan, lekin umumiy printer nishonlari topilmadi")
+    return DefaultAccess(restrict=restrict, device_ids=tuple(device_ids), tokens=tokens)
+
+
+async def update_access(
+    session: AsyncSession,
+    *,
+    restrict_default: bool | None = None,
+    device_ids: list[int] | None = None,
+) -> DefaultAccess:
+    """Standart qoidani qisman yangilaydi. `device_ids` ro'yxatni butunlay almashtiradi.
+
+    Umumiy printer belgilanmagan holda cheklovni yoqib bo'lmaydi: bu hammani
+    bir zumda to'xtatib qo'ygan bo'lardi.
+    """
+    setting = await session.get(PrinterAccessSetting, _SETTINGS_ID)
+    next_ids = (
+        sorted(dict.fromkeys(device_ids))
+        if device_ids is not None
+        else await public_device_ids(session)
+    )
+    next_restrict = (
+        restrict_default
+        if restrict_default is not None
+        else bool(setting and setting.restrict_default)
+    )
+
+    if next_restrict and not next_ids:
+        raise HTTPException(
+            _UNPROCESSABLE,
+            detail="Avval umumiy printerlarni belgilang, aks holda hech kim chop eta olmaydi",
+        )
+
+    if device_ids is not None:
+        await _check_devices_exist(session, next_ids)
+        await session.execute(delete(PublicPrinter))
+        session.add_all([PublicPrinter(device_id=device_id) for device_id in next_ids])
+
+    if setting is None:
+        session.add(PrinterAccessSetting(id=_SETTINGS_ID, restrict_default=next_restrict))
+    else:
+        setting.restrict_default = next_restrict
+
+    await session.commit()
+    return await default_access(session)
+
+
+async def policy_by_login(
+    session: AsyncSession, *, public_tokens: tuple[str, ...]
+) -> dict[str, LoginPolicy]:
     """Guruhga kirgan har bir login uchun hal qilingan siyosat.
 
-    Guruhga kirmaganlar natijada bo'lmaydi — ular cheklanmaydi.
+    Guruhga kirmaganlar natijada bo'lmaydi — ularga standart qoida qo'llanadi.
+    `allowed` guruh istisno bo'lgani uchun umumiy printerlarni ham oladi.
     """
     rows = (
         await session.execute(
@@ -230,7 +382,9 @@ async def policy_by_login(session: AsyncSession) -> dict[str, LoginPolicy]:
             group_id=gid,
             group_name=name,
             policy=policy,
-            tokens=tokens.get(gid, ()) if policy == ALLOWED else (),
+            tokens=tuple(dict.fromkeys((*public_tokens, *tokens.get(gid, ()))))
+            if policy == ALLOWED
+            else (),
         )
         for login, gid, name, policy in rows
     }
@@ -319,8 +473,8 @@ async def update_group(
 async def delete_group(session: AsyncSession, group_id: int) -> None:
     """Guruhni va uning a'zolik/printer yozuvlarini o'chiradi.
 
-    A'zolar hech qanday guruhsiz qoladi, ya'ni cheklovsiz chop etadi — bu
-    ataylab: guruhni o'chirish "cheklovni olib tashlash" degani.
+    A'zolar guruhsiz qoladi, ya'ni ularga standart qoida qo'llanadi: istisno
+    bekor bo'ladi.
     """
     await _require_group(session, group_id)
     await session.execute(
@@ -354,13 +508,18 @@ class Violation:
     last_at: datetime
 
 
-def violations_stmt(start: datetime, end: datetime):
-    r"""Davr ichida guruh siyosatini buzgan chiqarishlar.
+def violations_stmt(start: datetime, end: datetime, *, include_default: bool):
+    r"""Davr ichida ruxsat etilmagan printerdan chiqarishlar.
 
-    Qoida ikki holatni qamrab oladi:
+    Qoida uch holatni qamrab oladi:
 
     * `policy='none'` \u2014 har qanday chiqarish buzilish;
-    * `policy='allowed'` \u2014 qurilma guruhning ruxsat ro'yxatida bo'lmasa.
+    * `policy='allowed'` \u2014 qurilma na umumiy, na guruhning ro'yxatida bo'lsa;
+    * guruhsiz xodim \u2014 qurilma umumiy bo'lmasa (`include_default`).
+
+    `include_default` cheklov tugmasiga emas, umumiy ro'yxat borligiga bog'liq.
+    Shu sababli hisobot cheklov yoqilishidan oldin "kim to'silgan bo'lardi"
+    degan savolga javob beradi.
 
     Faqat **muvaffaqiyatli** ishlar olinadi: hisobot "qog'oz sarflandi" degan
     faktni ko'rsatadi, urinishni emas. Bekor qilingan ishlar jurnalda sababi
@@ -373,6 +532,10 @@ def violations_stmt(start: datetime, end: datetime):
     login_expr = func.lower(
         func.regexp_replace(PrintJob.user_name, SQL_DOMAIN_PREFIX_PATTERN, "")
     )
+    # Yorliq `login` emas: so'rovda `employees.login` ustuni ham bor.
+    login = login_expr.label("norm_login")
+
+    is_public = select(PublicPrinter.id).where(PublicPrinter.device_id == device_id).exists()
 
     allowed_here = (
         select(PrinterGroupPrinter.id)
@@ -383,9 +546,16 @@ def violations_stmt(start: datetime, end: datetime):
         .exists()
     )
 
+    breaches = [
+        PrinterGroup.policy == NONE,
+        and_(PrinterGroup.policy == ALLOWED, ~allowed_here, ~is_public),
+    ]
+    if include_default:
+        breaches.append(and_(PrinterGroupMember.id.is_(None), ~is_public))
+
     stmt = (
         select(
-            PrinterGroupMember.login.label("login"),
+            login,
             func.max(Employee.full_name).label("full_name"),
             func.max(Employee.department).label("department"),
             func.max(PrinterGroup.name).label("group_name"),
@@ -405,34 +575,35 @@ def violations_stmt(start: datetime, end: datetime):
     stmt = printers.join_device(stmt)
     stmt = (
         stmt.outerjoin(PrinterDevice, PrinterDevice.id == device_id)
-        .join(PrinterGroupMember, PrinterGroupMember.login == login_expr)
-        .join(PrinterGroup, PrinterGroup.id == PrinterGroupMember.group_id)
-        .outerjoin(Employee, func.lower(Employee.login) == PrinterGroupMember.login)
+        .outerjoin(PrinterGroupMember, PrinterGroupMember.login == login_expr)
+        .outerjoin(PrinterGroup, PrinterGroup.id == PrinterGroupMember.group_id)
+        .outerjoin(Employee, func.lower(Employee.login) == login_expr)
         .where(
             PrintJob.printed_at >= start,
             PrintJob.printed_at < end,
             PrintJob.success.is_(True),
             device_id.isnot(None),
-            or_(
-                PrinterGroup.policy == NONE,
-                and_(PrinterGroup.policy == ALLOWED, ~allowed_here),
-            ),
+            or_(*breaches),
         )
-        .group_by(PrinterGroupMember.login, device_id)
+        .group_by(login, device_id)
         .order_by(func.sum(PrintJob.pages).desc())
     )
     return stmt
 
 
 async def violations(session: AsyncSession, start: datetime, end: datetime) -> list[Violation]:
-    rows = (await session.execute(violations_stmt(start, end))).all()
+    # Umumiy ro'yxat bo'sh bo'lsa guruhsiz hamma "buzgan" bo'lib chiqardi.
+    has_public = await session.scalar(select(PublicPrinter.id).limit(1)) is not None
+    rows = (
+        await session.execute(violations_stmt(start, end, include_default=has_public))
+    ).all()
     return [
         Violation(
-            login=r.login,
+            login=r.norm_login,
             full_name=r.full_name,
             department=r.department,
-            group_name=r.group_name,
-            policy=r.policy,
+            group_name=r.group_name or NO_GROUP_LABEL,
+            policy=r.policy or DEFAULT,
             device_id=int(r.device_id) if r.device_id is not None else None,
             printer_name=r.printer_name or "—",
             pages=int(r.pages or 0),

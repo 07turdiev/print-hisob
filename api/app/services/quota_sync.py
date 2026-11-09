@@ -146,9 +146,11 @@ def _allowed_for(
     policies: dict[str, printer_groups.LoginPolicy],
     *,
     blocked: bool,
+    default: list[str],
 ) -> list[str]:
     """Shu login uchun ruxsat etilgan printerlar ro'yxati.
 
+    Guruhsiz xodim `default` ni oladi (standart qoida), guruh esa istisno.
     Har doim ochiq-oydin qiymat qaytariladi, hatto cheklov bo'lmaganda ham
     (`["*"]`). Sababi `limit` bilan bir xil: agent javobni keshlaydi, shuning
     uchun "cheklov olindi" xabari ro'yxatdan yo'qolish orqali emas, aniq qiymat
@@ -159,7 +161,9 @@ def _allowed_for(
         return []
 
     policy = policies.get(login)
-    if policy is None or policy.policy == printer_groups.ALL:
+    if policy is None:
+        return list(default)
+    if policy.policy == printer_groups.ALL:
         return [printer_groups.ANY_PRINTER]
     if policy.policy == printer_groups.ALLOWED:
         return list(policy.tokens)
@@ -187,6 +191,9 @@ async def sync_quotas(session: AsyncSession, payload: QuotaSyncIn) -> QuotaSyncO
 
     `allowedPrinters` esa yangi: u faqat `allowedPrinters` ni biladigan agentda
     kuchga kiradi. Eski agentlar notanish maydonni e'tiborsiz qoldiradi.
+    Standart ro'yxat javobning yuqori qismida bir marta boradi. Bu agent
+    so'ramagan login uchun u takrorlanmaydi, aks holda har bir javob admin
+    tegib o'tgan loginlar soniga ko'paygan bo'lardi.
     """
     period = current_period(agent_period_type())
     key = period_key(period.period_type, period.year, period.period_no)
@@ -194,7 +201,9 @@ async def sync_quotas(session: AsyncSession, payload: QuotaSyncIn) -> QuotaSyncO
     report_used = settings.agent_quota_report_used
     usage = await _usage_by_login(session, period) if report_used else {}
     known = await user_overrides.known_login_states(session)
-    policies = await printer_groups.policy_by_login(session)
+    access = await printer_groups.default_access(session)
+    default_allowed = access.allowed_printers()
+    policies = await printer_groups.policy_by_login(session, public_tokens=access.tokens)
     group_blocked = {
         login for login, p in policies.items() if p.policy == printer_groups.NONE
     }
@@ -216,13 +225,16 @@ async def sync_quotas(session: AsyncSession, payload: QuotaSyncIn) -> QuotaSyncO
     served: dict[str, QuotaLimitOut] = {}
     for login, display_name in sorted(logins.items()):
         blocked = bool(known.get(login)) or login in group_blocked
+        allowed = _allowed_for(login, policies, blocked=blocked, default=default_allowed)
         answer = QuotaLimitOut(
             # Agent nomlarni registrga sezgir bo'lmagan holda solishtiradi, shuning
             # uchun u yuborgan shaklni o'zgartirmasdan qaytaramiz.
             user=display_name,
             limit=BLOCKED if blocked else UNLIMITED,
             used=usage.get(login, 0) if report_used else None,
-            allowed_printers=_allowed_for(login, policies, blocked=blocked),
+            allowed_printers=None
+            if login not in requested and allowed == default_allowed
+            else allowed,
         )
         users.append(answer)
         served[login] = answer
@@ -233,5 +245,6 @@ async def sync_quotas(session: AsyncSession, payload: QuotaSyncIn) -> QuotaSyncO
         period_key=key,
         # Ro'yxatda yo'q har kim cheklovsiz — kvotadan oshish hech kimni to'smaydi.
         default_limit=UNLIMITED,
+        allowed_printers=default_allowed,
         users=users,
     )

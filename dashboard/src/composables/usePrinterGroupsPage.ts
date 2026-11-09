@@ -4,13 +4,17 @@ import {
   createPrinterGroup,
   deletePrinterGroup,
   getEmployees,
+  getPrinterAccess,
   getPrinters,
   getPrinterGroups,
+  updatePrinterAccess,
   updatePrinterGroup,
 } from '../api/client'
 import type {
   Employee,
   Printer,
+  PrinterAccess,
+  PrinterAccessPatch,
   PrinterGroup,
   PrinterGroupPatch,
   PrinterGroupPolicy,
@@ -37,6 +41,11 @@ export function usePrinterGroupsPage() {
   const creating = ref(false)
   const createError = ref<string | null>(null)
 
+  /** Standart qoida: cheklov holati va umumiy printerlar. */
+  const access = ref<PrinterAccess>({ restrictDefault: false, publicDeviceIds: [] })
+  const savingAccess = ref(false)
+  const accessError = ref<string | null>(null)
+
   function describe(err: unknown, fallback: string): string {
     if (err instanceof ApiError) return err.detail ?? err.message
     return fallback
@@ -46,15 +55,17 @@ export function usePrinterGroupsPage() {
     loading.value = true
     error.value = null
     try {
-      const [g, p, e] = await Promise.all([
+      const [g, p, e, a] = await Promise.all([
         getPrinterGroups(),
         getPrinters(),
         // Guruhga faqat ishlayotgan xodimlar qo'shiladi.
         getEmployees({ isActive: true, limit: 2000 }),
+        getPrinterAccess(),
       ])
       groups.value = g
       printers.value = p
       employees.value = e
+      access.value = a
     } catch (err) {
       error.value = describe(err, "Ma'lumotlarni yuklab bo'lmadi")
     } finally {
@@ -79,6 +90,19 @@ export function usePrinterGroupsPage() {
       for (const login of g.logins) taken.add(login)
     }
     return taken
+  }
+
+  async function saveAccess(patch: PrinterAccessPatch) {
+    savingAccess.value = true
+    accessError.value = null
+    try {
+      access.value = await updatePrinterAccess(patch)
+    } catch (err) {
+      accessError.value = describe(err, "Saqlab bo'lmadi")
+      throw err
+    } finally {
+      savingAccess.value = false
+    }
   }
 
   async function create(name: string, policy: PrinterGroupPolicy) {
@@ -139,6 +163,10 @@ export function usePrinterGroupsPage() {
     rowErrors,
     creating,
     createError,
+    access,
+    savingAccess,
+    accessError,
+    saveAccess,
     create,
     save,
     remove,

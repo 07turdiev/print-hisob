@@ -1090,12 +1090,15 @@ class PrinterGroupOut(BaseModel):
     id: int
     name: str
     policy: PrinterGroupPolicy = Field(
-        description="`all` — barcha printerlar, `allowed` — faqat belgilangan, `none` — chiqara olmaydi"
+        description=(
+            "`all` — barcha printerlar, `allowed` — umumiy va belgilangan printerlar, "
+            "`none` — chiqara olmaydi"
+        )
     )
     device_ids: list[int] = Field(
         default_factory=list,
         serialization_alias="deviceIds",
-        description="Ruxsat etilgan qurilmalar (`policy='allowed'` bo'lganda ishlatiladi)",
+        description="Umumiy printerlarga qo'shimcha qurilmalar (`policy='allowed'` bo'lganda)",
     )
     logins: list[str] = Field(
         default_factory=list, description="Guruh a'zolari (normallashtirilgan loginlar)"
@@ -1138,6 +1141,38 @@ class PrinterGroupPatchIn(BaseModel):
     logins: list[_text(255)] | None = None
 
 
+class PrinterAccessOut(BaseModel):
+    """Standart printer qoidasi: cheklov holati va umumiy printerlar."""
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "examples": [{"restrictDefault": True, "publicDeviceIds": [1, 4, 5, 14, 18, 19, 24, 29]}]
+        }
+    )
+
+    restrict_default: bool = Field(
+        serialization_alias="restrictDefault",
+        description="`true` — guruhsiz xodim faqat umumiy printerlardan chiqaradi",
+    )
+    public_device_ids: list[int] = Field(
+        serialization_alias="publicDeviceIds", description="Umumiy printerlar"
+    )
+
+
+class PrinterAccessPatchIn(BaseModel):
+    """`PUT /api/printer-access` tanasi — faqat yuborilgan maydon o'zgaradi."""
+
+    model_config = ConfigDict(
+        populate_by_name=True,
+        json_schema_extra={
+            "examples": [{"publicDeviceIds": [1, 18]}, {"restrictDefault": True}]
+        },
+    )
+
+    restrict_default: bool | None = Field(default=None, alias="restrictDefault")
+    public_device_ids: list[int] | None = Field(default=None, alias="publicDeviceIds")
+
+
 class PolicyViolationOut(BaseModel):
     """Xodim o'ziga ruxsat etilmagan printerdan chiqargan \u2014 hisobotdagi bitta qator.
 
@@ -1168,7 +1203,8 @@ class PolicyViolationOut(BaseModel):
     full_name: str | None = Field(serialization_alias="fullName")
     department: str | None
     group_name: str = Field(serialization_alias="groupName")
-    policy: PrinterGroupPolicy
+    # `default` — guruhsiz xodim, unga standart qoida qo'llangan.
+    policy: PrinterGroupPolicy | Literal["default"]
     device_id: int | None = Field(serialization_alias="deviceId")
     printer_name: str = Field(serialization_alias="printerName")
     pages: int

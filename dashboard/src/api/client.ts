@@ -18,6 +18,8 @@ import type {
   PrintJobPage,
   PrintJobQuery,
   Printer,
+  PrinterAccess,
+  PrinterAccessPatch,
   PrinterGroup,
   PrinterGroupPatch,
   PrinterGroupPolicy,
@@ -204,6 +206,14 @@ export function getPrinterSuggestions(): Promise<PrinterMergeSuggestion[]> {
 }
 
 // --- Guruhlar va printer ruxsatlari --------------------------------------
+
+export function getPrinterAccess(): Promise<PrinterAccess> {
+  return request<PrinterAccess>('/api/printer-access')
+}
+
+export function updatePrinterAccess(patch: PrinterAccessPatch): Promise<PrinterAccess> {
+  return request<PrinterAccess>('/api/printer-access', { method: 'PUT', body: patch })
+}
 
 export function getPrinterGroups(): Promise<PrinterGroup[]> {
   return request<PrinterGroup[]>('/api/printer-groups')

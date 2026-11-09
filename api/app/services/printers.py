@@ -28,12 +28,19 @@ from dataclasses import dataclass
 from datetime import datetime
 
 from fastapi import HTTPException, status
-from sqlalchemy import String, cast, func, select, update
+from sqlalchemy import String, cast, delete, func, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
-from app.models import Printer, PrinterAlias, PrinterDevice, PrintJob
+from app.models import (
+    Printer,
+    PrinterAlias,
+    PrinterDevice,
+    PrinterGroupPrinter,
+    PrintJob,
+    PublicPrinter,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -68,6 +75,7 @@ class JobPrinter:
     ip: str | None
     name: str
     seen_at: datetime
+    success: bool = True
 
     def identity(self) -> tuple[str, str]:
         """Shu yozuv uchun qurilmani yaratishda ishlatiladigan asosiy nishon."""
@@ -218,12 +226,16 @@ async def ensure_device(session: AsyncSession, job: JobPrinter) -> int:
     if job.mac and is_ip(job.ip):
         await _claim_alias(session, device_id, IP, job.ip or "")
 
+    # `last_ip` faqat muvaffaqiyatli chop etishda yangilanadi: agentga ruxsat
+    # ro'yxatida aynan shu manzil ketadi. Kompyuterda eski IP'ga qaragan navbat
+    # qolgan bo'lsa, undagi ishlar muvaffaqiyatsiz tugaydi va joriy IP'ni
+    # o'zgartirmasligi kerak.
     await session.execute(
         update(PrinterDevice)
         .where(PrinterDevice.id == device_id)
         .values(
             last_driver_name=job.name,
-            last_ip=job.ip if is_ip(job.ip) else PrinterDevice.last_ip,
+            last_ip=job.ip if job.success and is_ip(job.ip) else PrinterDevice.last_ip,
             last_seen=func.greatest(func.coalesce(PrinterDevice.last_seen, job.seen_at), job.seen_at),
         )
     )
@@ -509,6 +521,42 @@ async def rename(session: AsyncSession, device_id: int, name: str | None) -> Pri
     return device
 
 
+async def _move_access_references(
+    session: AsyncSession, target_id: int, source_id: int
+) -> None:
+    """Birlashtirilayotgan qurilmaning ruxsatlarini `target` ga o'tkazadi.
+
+    Aks holda o'chirilgan qurilmaga qaragan yozuvlar osilib qolardi va o'sha
+    printer ruxsat ro'yxatidan jim turib tushib ketardi.
+    """
+    already_in_group = select(PrinterGroupPrinter.group_id).where(
+        PrinterGroupPrinter.device_id == target_id
+    )
+    await session.execute(
+        delete(PrinterGroupPrinter).where(
+            PrinterGroupPrinter.device_id == source_id,
+            PrinterGroupPrinter.group_id.in_(already_in_group),
+        )
+    )
+    await session.execute(
+        update(PrinterGroupPrinter)
+        .where(PrinterGroupPrinter.device_id == source_id)
+        .values(device_id=target_id)
+    )
+
+    target_is_public = await session.scalar(
+        select(PublicPrinter.id).where(PublicPrinter.device_id == target_id)
+    )
+    if target_is_public is not None:
+        await session.execute(delete(PublicPrinter).where(PublicPrinter.device_id == source_id))
+    else:
+        await session.execute(
+            update(PublicPrinter)
+            .where(PublicPrinter.device_id == source_id)
+            .values(device_id=target_id)
+        )
+
+
 async def merge(session: AsyncSession, target_id: int, source_id: int) -> PrinterDevice:
     """`source` qurilmasini `target` ichiga qo'shadi: barcha nishonlar ko'chadi.
 
@@ -526,6 +574,7 @@ async def merge(session: AsyncSession, target_id: int, source_id: int) -> Printe
     await session.execute(
         update(PrinterAlias).where(PrinterAlias.device_id == source_id).values(device_id=target_id)
     )
+    await _move_access_references(session, target_id, source_id)
     # Nom qo'yilmagan bo'lsa, qo'shilayotgan qurilmanikini olamiz — aks holda
     # admin qo'ygan nom yo'qolardi.
     if not target.name and source.name:

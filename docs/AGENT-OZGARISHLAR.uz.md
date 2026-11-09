@@ -352,8 +352,15 @@ Boshqa sozlamalar o'zgarmaydi.
    e'tiborsiz qoldiradi, shuning uchun flotda hech narsa o'zgarmadi. **Ya'ni siz hoziroq
    haqiqiy serverga so'rov yuborib javobni ko'rishingiz mumkin.**
 2. **Agent** — yangi versiya tayyorlanadi va bir-ikki mashinada sinaladi.
-3. **Guruhlar** — admin dashboardda guruh tuzadi; "faqat belgilangan printerlar" siyosati
-   aynan shundan keyin kuchga kiradi.
+3. **Umumiy printerlar** — admin umumiy printerlarni belgilab, cheklovni yoqadi. Shundan
+   keyin yuqoridagi umumiy `allowedPrinters` `["*"]` emas, shu printerlarning ro'yxati
+   bo'ladi va ro'yxatda alohida ko'rsatilmagan hammaga qo'llanadi.
+4. **Istisnolar** — admin guruh tuzadi: "barcha printerlar" (`["*"]`) yoki "ma'lum
+   printerlar" (umumiylar va guruhda belgilanganlar).
+
+Tarmoq printeri ro'yxatda MAC va joriy IP bilan keladi, drayver nomi faqat USB va virtual
+printerlar uchun keladi. `users[]` dagi qatorda `allowedPrinters` `null` bo'lsa, yuqoridagi
+umumiy ro'yxat qo'llanadi.
 
 Yana bir narsa o'zgardi: `limit: 0` endi faqat xodimni qo'lda bloklashdan emas, guruh
 siyosatidan ham kelishi mumkin ("umuman chiqarmaydi" darajasi). Agent uchun farqi yo'q —

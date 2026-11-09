@@ -1,8 +1,9 @@
-"""`/api/printer-groups` — xodimlar guruhlari va printer ruxsatlari.
+"""`/api/printer-access` va `/api/printer-groups` — printer ruxsatlari.
 
-Guruh uchta siyosatdan birini oladi: barcha printerlar, faqat belgilanganlar,
-yoki umuman chiqarmaslik. Bir xodim bir vaqtda faqat bitta guruhda bo'ladi;
-guruhga kirmagan xodim cheklanmaydi.
+Standart qoida: cheklov yoqilganda guruhsiz xodim faqat umumiy printerlardan
+chiqaradi. Guruh — istisno: barcha printerlar, ma'lum printerlar (umumiylarga
+qo'shimcha) yoki umuman chiqarmaslik. Bir xodim bir vaqtda faqat bitta guruhda
+bo'ladi.
 """
 
 from fastapi import APIRouter, Depends, Security, status
@@ -14,6 +15,8 @@ from app.deps import period_params
 from app.periods import Period
 from app.schemas import (
     PolicyViolationOut,
+    PrinterAccessOut,
+    PrinterAccessPatchIn,
     PrinterGroupIn,
     PrinterGroupOut,
     PrinterGroupPatchIn,
@@ -39,6 +42,45 @@ async def _one(session: AsyncSession, group_id: int) -> PrinterGroupOut:
     return _to_out(rows[group_id])
 
 
+def _access_out(access: printer_groups.DefaultAccess) -> PrinterAccessOut:
+    return PrinterAccessOut(
+        restrict_default=access.restrict,
+        public_device_ids=list(access.device_ids),
+    )
+
+
+@router.get(
+    "/api/printer-access",
+    response_model=PrinterAccessOut,
+    summary="Standart printer qoidasi",
+    response_description="Cheklov holati va umumiy printerlar",
+    responses=USER_UNAUTHORIZED_RESPONSE,
+)
+async def get_access(session: AsyncSession = Depends(get_session)) -> PrinterAccessOut:
+    return _access_out(await printer_groups.default_access(session))
+
+
+@router.put(
+    "/api/printer-access",
+    response_model=PrinterAccessOut,
+    summary="Standart printer qoidasini o'zgartirish",
+    response_description="Yangilangan qoida",
+    responses=USER_UNAUTHORIZED_RESPONSE,
+)
+async def update_access(
+    payload: PrinterAccessPatchIn,
+    session: AsyncSession = Depends(get_session),
+) -> PrinterAccessOut:
+    """Faqat yuborilgan maydon o'zgaradi. `publicDeviceIds` ro'yxatni almashtiradi."""
+    return _access_out(
+        await printer_groups.update_access(
+            session,
+            restrict_default=payload.restrict_default,
+            device_ids=payload.public_device_ids,
+        )
+    )
+
+
 @router.get(
     "/api/printer-groups",
     response_model=list[PrinterGroupOut],
@@ -61,12 +103,12 @@ async def list_violations(
     period: Period = Depends(period_params),
     session: AsyncSession = Depends(get_session),
 ) -> list[PolicyViolationOut]:
-    """Guruh siyosatini buzib chiqarilgan qog'oz.
+    """Ruxsat etilmagan printerdan chiqarilgan qog'oz.
 
-    Agent hali `allowedPrinters` ni bilmagani uchun "faqat belgilangan"
-    siyosati jismonan to'smaydi — shuning uchun bu hisobot hozircha yagona
-    nazorat vositasi. Agent yangilangandan keyin ham kerak bo'ladi: eski
-    versiyada qolgan mashinalarni aniqlab beradi.
+    Umumiy printerlar belgilangandan keyin guruhsiz xodimlarni ham qamraydi va
+    cheklov yoqilishidan oldin "kim to'silgan bo'lardi" degan savolga javob
+    beradi. Agent yangilangandan keyin eski versiyada qolgan mashinalarni
+    aniqlab beradi.
     """
     rows = await printer_groups.violations(session, period.start, period.end)
     return [
@@ -144,5 +186,5 @@ async def delete_group(
     group_id: int,
     session: AsyncSession = Depends(get_session),
 ) -> None:
-    """A'zolar guruhsiz qoladi, ya'ni cheklovsiz chop etadi — bu ataylab."""
+    """A'zolar guruhsiz qoladi, ya'ni ularga standart qoida qo'llanadi."""
     await printer_groups.delete_group(session, group_id)
