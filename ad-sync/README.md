@@ -10,7 +10,7 @@ o'qib, Printer Hisob API'ga (`POST /api/ad-sync`) yuboradi. Har soatda Task Sche
 | `login` | `sAMAccountName` | Print job'dagi `user` bilan **mos kelishi shart** |
 | `fullName` | `DisplayName` (bo'sh bo'lsa `Name`) | F.I.SH. |
 | `department` | **OU nomi** (xodim turgan bo'lim) | masalan `Ichki audit bo'limi` |
-| `position` | **`Description`** | masalan `Bosh mutaxassis` |
+| `position` | **`Title`** (`PositionSource`) | masalan `Bosh mutaxassis` |
 | `active` | **har doim `true`** | AD'da mavjud = ishlayapti (pastga qarang) |
 
 ## Ketgan / yangi kelgan xodimlarni aniqlash
@@ -24,14 +24,29 @@ xodimlar ishlayapti). Buning o'rniga **snapshot farqi** ishlatiladi:
 Bu `Mode: "full"` tufayli avtomatik ishlaydi. Agar kelajakda AD'ning `Enabled` bayrog'i
 ishonchli bo'lsa, `config.json` da `"UseAdEnabledFlag": true` qiling.
 
-Sizning AD'ingizda xodimlar **bo'lim nomi bilan atalgan OU'larда** joylashgan va lavozim
-**Description** maydoniga yozilgan — shuning uchun standart shunday.
+Sizning AD'ingizda xodimlar **bo'lim nomi bilan atalgan OU'larda** joylashgan. 2026-11-10 dan
+lavozim **`Title`** maydoniga ko'chirilgan (`Description` bo'sh), shuning uchun `config.json` da
+`"PositionSource": "Title"` turishi shart. Skriptning o'z standarti hali ham `Description`.
 
-Agar keyinchalik `Department`/`Title` atributlari to'ldirilsa, `config.json` da almashtiring:
+Agar keyinchalik bo'lim AD `department` atributidan olinsin desangiz:
 ```json
-"DepartmentSource": "Attribute",   // OU o'rniga AD `department` atributi
-"PositionSource":   "Title"        // Description o'rniga AD `title` atributi
+"DepartmentSource": "Attribute"    // OU o'rniga AD `department` atributi
 ```
+
+## Qaysi OU'lar o'qiladi (`SearchBase`)
+AD tuzilishi (2026-11-10 dan): `OU=Madaniyat` ichida `Madaniyat vazirligi`, `Tizim tashkilotlari`,
+shuningdek `Pochtalar`, `Bloklangan akkauntlar` va xizmat akkauntlari bor. Shuning uchun
+`SearchBase` ga `OU=Madaniyat` emas, kerakli OU'lar **ro'yxat** qilib beriladi:
+```json
+"SearchBase": [
+  "OU=Madaniyat vazirligi,OU=Madaniyat,DC=madaniyat,DC=local",
+  "OU=Tizim tashkilotlari,OU=Madaniyat,DC=madaniyat,DC=local"
+]
+```
+Bitta OU satr ko'rinishida ham yozilishi mumkin (eski shakl). OU'lardan biri topilmasa
+(nomi o'zgargan yoki ko'chirilgan), skript **hech narsa yubormasdan to'xtaydi**: qisman ro'yxat
+`full` rejimda o'sha OU'dagi hammani "ketgan" qilib qo'ygan bo'lardi. Logda
+`Directory object not found` chiqsa, `SearchBase` ni AD'dagi yangi yo'lga moslang.
 
 ## Talablar
 - **Domenga ulangan Windows mashina**.

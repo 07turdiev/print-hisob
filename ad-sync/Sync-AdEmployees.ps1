@@ -111,13 +111,36 @@ try {
         Properties = @('DisplayName', 'Department', 'Title', 'Description',
                        'Enabled', 'SamAccountName', 'DistinguishedName')
     }
-    # SearchBase — faqat xodimlar turgan OU (Builtin/Computers va h.k. tushmasligi uchun).
-    if (-not [string]::IsNullOrWhiteSpace($cfg.SearchBase)) {
-        $adParams['SearchBase'] = $cfg.SearchBase
-    }
 
-    $users = Get-ADUser @adParams
-    Write-Log "AD'dan olindi: $(@($users).Count) ta foydalanuvchi"
+    # SearchBase — xodimlar turgan OU (Builtin/Computers va h.k. tushmasligi uchun).
+    # Bitta satr yoki satrlar ro'yxati bo'lishi mumkin: masalan vazirlik va tizim
+    # tashkilotlari alohida OU'larda turadi, ularning ota OU'sida esa pochta va
+    # xizmat akkauntlari ham bor. Bo'sh bo'lsa butun domen o'qiladi.
+    #
+    # Bitta OU o'qilmasa (nomi o'zgargan, ko'chirilgan) skript TO'XTAYDI va hech
+    # narsa yubormaydi: qisman ro'yxat `mode=full` da o'sha OU'dagi hammani
+    # "ketgan" qilib qo'ygan bo'lardi.
+    $searchBases = @($cfg.SearchBase | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+    if ($searchBases.Count -eq 0) { $searchBases = @('') }
+
+    $users = @(
+        foreach ($base in $searchBases) {
+            $params = $adParams.Clone()
+            $label = 'butun domen'
+            if ($base) {
+                $params['SearchBase'] = $base
+                $label = $base
+            }
+            $found = @(Get-ADUser @params)
+            Write-Log "AD'dan olindi: $($found.Count) ta foydalanuvchi ($label)"
+            $found
+        }
+    )
+    # Ichma-ich OU'lar berilsa bir odam ikki marta kelishi mumkin.
+    $users = @($users | Sort-Object -Property SamAccountName -Unique)
+    if ($searchBases.Count -gt 1) {
+        Write-Log "Jami: $($users.Count) ta foydalanuvchi ($($searchBases.Count) ta OU)"
+    }
 
     # -----------------------------------------------------------------------
     # 4. Kerakli maydonlarga o'girish
