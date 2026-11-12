@@ -55,6 +55,17 @@ Dashboard uchun (JWT `Authorization: Bearer`):
 | `PUT` | `/api/user-overrides/{login}` | Bloklash/blokdan chiqarish, biriktirish/uzish |
 | `GET` | `/health` | Xizmat va baza holati (auth talab qilinmaydi) |
 
+Ichki xizmatlar portali uchun (`X-Portal-Key`, faqat portal serveridan). Hujjat:
+[`docs/PORTAL-API.uz.md`](../docs/PORTAL-API.uz.md).
+
+| Metod | Yo'l | Vazifasi |
+|-------|------|----------|
+| `GET` | `/api/portal/v1/employees/{login}/printing` | Xodimning normasi, printer ruxsati va sarfi |
+| `GET` | `/api/portal/v1/employees/{login}/jobs` | Xodimning chop etishlari |
+
+`PORTAL_API_KEY` bo'sh bo'lsa portal endpointlari yopiq turadi (503): ular xodimning
+shaxsiy ma'lumotini beradi.
+
 ### POST /api/print-quotas
 
 Agent har necha daqiqada shu endpointga murojaat qiladi: so'rovda — shu mashinada

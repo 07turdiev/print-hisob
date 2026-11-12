@@ -1,6 +1,6 @@
 """`GET /api/stats/employees.csv` uchun baza talab qilmaydigan testlar.
 
-`_employee_stats_rows` (SQL agregatsiyasi) `conftest.FakeSession` bilan har doim
+`reports.employee_stats` (SQL agregatsiyasi) `conftest.FakeSession` bilan har doim
 bo'sh natija qaytaradi, shuning uchun bu yerda uni to'g'ridan-to'g'ri
 mock qilib, faqat CSV formatlash (BOM, sarlavha, bo'lim guruhlash,
 "Noma'lum foydalanuvchilar" bo'limi) tekshiriladi.
@@ -8,7 +8,7 @@ mock qilib, faqat CSV formatlash (BOM, sarlavha, bo'lim guruhlash,
 
 from unittest.mock import AsyncMock
 
-import app.main as main_module
+from app.services import reports
 from app.schemas import EmployeeStatOut
 
 PERIOD = {"period_type": "quarter", "year": 2026, "period_no": 3}
@@ -55,14 +55,14 @@ _ROWS = [
 
 
 def test_employees_csv_returns_csv_content_type(client, monkeypatch):
-    monkeypatch.setattr(main_module, "_employee_stats_rows", AsyncMock(return_value=[]))
+    monkeypatch.setattr(reports, "employee_stats", AsyncMock(return_value=[]))
     r = client.get("/api/stats/employees.csv", params=PERIOD)
     assert r.status_code == 200
     assert r.headers["content-type"].startswith("text/csv")
 
 
 def test_employees_csv_starts_with_bom_and_header(client, monkeypatch):
-    monkeypatch.setattr(main_module, "_employee_stats_rows", AsyncMock(return_value=_ROWS))
+    monkeypatch.setattr(reports, "employee_stats", AsyncMock(return_value=_ROWS))
     r = client.get("/api/stats/employees.csv", params=PERIOD)
     body = r.content.decode("utf-8")
     assert body.startswith("﻿")
@@ -71,7 +71,7 @@ def test_employees_csv_starts_with_bom_and_header(client, monkeypatch):
 
 
 def test_employees_csv_groups_by_department(client, monkeypatch):
-    monkeypatch.setattr(main_module, "_employee_stats_rows", AsyncMock(return_value=_ROWS))
+    monkeypatch.setattr(reports, "employee_stats", AsyncMock(return_value=_ROWS))
     r = client.get("/api/stats/employees.csv", params=PERIOD)
     lines = r.content.decode("utf-8")[1:].splitlines()
 
@@ -83,7 +83,7 @@ def test_employees_csv_groups_by_department(client, monkeypatch):
 
 
 def test_employees_csv_unmatched_section(client, monkeypatch):
-    monkeypatch.setattr(main_module, "_employee_stats_rows", AsyncMock(return_value=_ROWS))
+    monkeypatch.setattr(reports, "employee_stats", AsyncMock(return_value=_ROWS))
     r = client.get("/api/stats/employees.csv", params=PERIOD)
     body = r.content.decode("utf-8")
     assert "Noma'lum loginlar" in body
@@ -91,7 +91,7 @@ def test_employees_csv_unmatched_section(client, monkeypatch):
 
 
 def test_employees_csv_filename_header(client, monkeypatch):
-    monkeypatch.setattr(main_module, "_employee_stats_rows", AsyncMock(return_value=[]))
+    monkeypatch.setattr(reports, "employee_stats", AsyncMock(return_value=[]))
     r = client.get("/api/stats/employees.csv", params=PERIOD)
     disposition = r.headers["content-disposition"]
     assert disposition.startswith("attachment;")
@@ -100,7 +100,7 @@ def test_employees_csv_filename_header(client, monkeypatch):
 
 
 def test_employees_csv_month_period_label(client, monkeypatch):
-    monkeypatch.setattr(main_module, "_employee_stats_rows", AsyncMock(return_value=[]))
+    monkeypatch.setattr(reports, "employee_stats", AsyncMock(return_value=[]))
     r = client.get(
         "/api/stats/employees.csv",
         params={"period_type": "month", "year": 2026, "period_no": 7},

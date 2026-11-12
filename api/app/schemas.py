@@ -1233,3 +1233,120 @@ class PolicyViolationOut(BaseModel):
     pages: int
     jobs: int
     last_at: datetime = Field(serialization_alias="lastAt")
+
+
+# ---------------------------------------------------------------------------
+# Ichki xizmatlar portali: xodim o'z ma'lumotini ko'radi (`/api/portal/v1`)
+# ---------------------------------------------------------------------------
+
+
+class PortalEmployeeOut(BaseModel):
+    login: str
+    full_name: str | None = Field(serialization_alias="fullName")
+    department: str | None
+    position: str | None
+    # `active` — AD'da ishlaydi, `inactive` — AD'dan chiqarilgan,
+    # `unknown` — AD'da topilmagan, faqat chop etish tarixida bor.
+    status: Literal["active", "inactive", "unknown"]
+
+
+class PortalPeriodOut(BaseModel):
+    period_type: PeriodType = Field(serialization_alias="periodType")
+    year: int
+    period_no: int = Field(serialization_alias="periodNo")
+    label: str = Field(description="Masalan `2026-yil, 4-chorak` yoki `2026-yil, Noyabr`")
+    start: datetime = Field(description="Davr boshi (kiradi)")
+    end: datetime = Field(description="Davr oxiri (kirmaydi)")
+
+
+class PortalQuotaOut(BaseModel):
+    allocated: int = Field(description="Davr uchun norma (varaq)")
+    used: int = Field(description="Xodimning o'zi chop etgan varaqlar")
+    used_from_linked: int = Field(
+        serialization_alias="usedFromLinked",
+        description="Unga biriktirilgan loginlardan qo'shilgan varaqlar",
+    )
+    used_total: int = Field(
+        serialization_alias="usedTotal", description="`used + usedFromLinked`, norma shunga solishtiriladi"
+    )
+    remaining: int = Field(description="`allocated - usedTotal`, manfiy bo'lishi mumkin")
+    percent: float | None = Field(
+        description="`usedTotal / allocated * 100`, bir xona aniqlikda. Norma 0 bo'lsa `null`"
+    )
+    over_limit: bool = Field(serialization_alias="overLimit")
+    is_default: bool = Field(
+        serialization_alias="isDefault",
+        description="Xodimga alohida norma belgilanmagan, standart norma qo'llangan",
+    )
+    linked_logins: list[str] = Field(
+        serialization_alias="linkedLogins",
+        description="Varaqlari shu xodim hisobiga qo'shiladigan loginlar",
+    )
+    charged_to: str | None = Field(
+        serialization_alias="chargedTo",
+        description="Bu xodimning varaqlari qo'shimcha ravishda kimning hisobida ko'rinadi",
+    )
+
+
+class PortalPrinterOut(BaseModel):
+    name: str
+    ip: str | None
+    common: bool = Field(description="Hamma uchun ruxsat etilgan umumiy printer")
+
+
+class PortalAccessOut(BaseModel):
+    can_print: bool = Field(serialization_alias="canPrint")
+    # `blocked` — admin chop etishni to'xtatgan; `all` — barcha printerlar;
+    # `common` — faqat umumiy printerlar; `common_and_group` — umumiy printerlar
+    # va guruhiga berilgan printerlar.
+    mode: Literal["blocked", "all", "common", "common_and_group"]
+    group_name: str | None = Field(
+        serialization_alias="groupName", description="Istisno guruhi, guruhsiz bo'lsa `null`"
+    )
+    printers: list[PortalPrinterOut] = Field(
+        description="Ruxsat etilgan printerlar. `mode` `all` yoki `blocked` bo'lsa bo'sh"
+    )
+
+
+class PortalPrinterUsageOut(BaseModel):
+    name: str
+    ip: str | None
+    pages: int
+    jobs: int
+    failed_jobs: int = Field(serialization_alias="failedJobs")
+    last_printed_at: datetime | None = Field(serialization_alias="lastPrintedAt")
+    allowed: bool = Field(description="Hozir shu printerdan chop etishga ruxsat bormi")
+
+
+class PortalDayOut(BaseModel):
+    date: str = Field(description="Kun (UTC), `YYYY-MM-DD`")
+    pages: int
+    jobs: int
+
+
+class PortalPrintingOut(BaseModel):
+    """Xodim kabineti uchun bitta javob: norma, ruxsat va sarf."""
+
+    employee: PortalEmployeeOut
+    period: PortalPeriodOut
+    quota: PortalQuotaOut
+    access: PortalAccessOut
+    printers: list[PortalPrinterUsageOut] = Field(
+        description="Davrda ishlatilgan printerlar, varaqlar bo'yicha kamayish tartibida"
+    )
+    daily: list[PortalDayOut] = Field(description="Chop etilgan kunlar, faqat varaq bo'lgan kunlar")
+    generated_at: datetime = Field(serialization_alias="generatedAt")
+
+
+class PortalJobOut(BaseModel):
+    printed_at: datetime = Field(serialization_alias="printedAt")
+    document: str
+    printer: str = Field(description="Reyestrdagi printer nomi")
+    printer_ip: str | None = Field(serialization_alias="printerIp")
+    computer: str
+    pages: int
+    success: bool
+    reason: str | None
+    counted: bool = Field(
+        description="Normaga kiradimi. PDF kabi virtual printer va bekor qilingan ishlar kirmaydi"
+    )

@@ -10,6 +10,11 @@ class Settings(BaseSettings):
     auto_create_tables: bool = True
     echo_sql: bool = False
 
+    # Ichki xizmatlar portali uchun kalit (`X-Portal-Key`), faqat portal serveri
+    # biladi. Bo'sh bo'lsa `/api/portal/*` ishlamaydi: u xodimlarning shaxsiy
+    # ma'lumotini beradi, shuning uchun kalitsiz ochib qo'yilmaydi.
+    portal_api_key: str = ""
+
     # Dashboard foydalanuvchisi uchun login/parol (JWT bilan autentifikatsiya).
     auth_username: str = "admin"
     auth_password: str = ""

@@ -106,11 +106,11 @@ def test_stats_printers_groups_by_resolved_device(client):
     """Guruhlash qurilma bo'yicha: yozuv mac -> ip -> nom tartibida bog'lanadi."""
     from sqlalchemy.dialects import postgresql
 
-    from app.main import _printer_usage_subquery
+    from app.services.reports import printer_usage_subquery
     from app.models import PrintJob
 
     compiled = str(
-        _printer_usage_subquery(PrintJob.printed_at.isnot(None)).compile(
+        printer_usage_subquery(PrintJob.printed_at.isnot(None)).compile(
             dialect=postgresql.dialect()
         )
     )

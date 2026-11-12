@@ -61,6 +61,41 @@ async def require_api_key(key: str | None = Security(api_key_header)) -> None:
         )
 
 
+# ---------------------------------------------------------------------------
+# Ichki xizmatlar portali uchun — X-Portal-Key (serverdan serverga)
+# ---------------------------------------------------------------------------
+
+portal_key_header = APIKeyHeader(
+    name="X-Portal-Key",
+    auto_error=False,
+    description="Portal serveriga berilgan `PORTAL_API_KEY`. Brauzerga hech qachon chiqmaydi.",
+)
+
+PORTAL_UNAUTHORIZED_RESPONSE = {
+    status.HTTP_401_UNAUTHORIZED: {"description": "Noto'g'ri yoki yo'q portal kaliti"},
+    status.HTTP_503_SERVICE_UNAVAILABLE: {"description": "Serverda `PORTAL_API_KEY` o'rnatilmagan"},
+}
+
+
+async def require_portal_key(key: str | None = Security(portal_key_header)) -> None:
+    """Portal endpointlari uchun kalit tekshiruvi.
+
+    Agent kalitidan farqli o'laroq, bu yerda bo'sh sozlama "hammaga ochiq" degani
+    emas: endpointlar xodimning shaxsiy ma'lumotini beradi, shuning uchun kalit
+    o'rnatilmaguncha ular yopiq turadi.
+    """
+    expected = settings.portal_api_key
+    if not expected:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Portal integratsiyasi yoqilmagan: serverda PORTAL_API_KEY o'rnatilmagan",
+        )
+    if key is None or not hmac.compare_digest(key.encode(), expected.encode()):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Noto'g'ri yoki yo'q portal kaliti"
+        )
+
+
 def verify_credentials(username: str, password: str) -> bool:
     """Login/parolni `.env`dagi qiymatlar bilan doimiy vaqtda (constant-time) solishtiradi."""
     # Baytlarda: `compare_digest` lotin bo'lmagan `str` uchun xato beradi.
