@@ -162,6 +162,27 @@ def test_agent_tiles_match_the_table(pg):
 # ---------------------------------------------------------------------------
 
 
+def test_printers_of_one_employee(pg):
+    send_jobs(
+        pg,
+        job(1, user="MADANIYAT\\Ali", pages=4),
+        job(2, user="ali", printer="Epson Kichik", printerMac="", printerIp="192.168.20.50", pages=2),
+        job(3, user="bob", pages=9),
+        job(4, user="ali", pages=0, success=False, reason=CANCELLED),
+    )
+
+    rows = pg.client.get("/api/stats/printers", params={**PERIOD, "user": "Ali"}).json()
+
+    # Bobning ishi va bekor qilingan ish kirmaydi, ikkala yozilish bitta odam.
+    assert sorted((r["name"], r["pages"], r["jobs"]) for r in rows) == [
+        ("Canon Katta", 4, 1),
+        ("Epson Kichik", 2, 1),
+    ]
+    canon = next(r for r in rows if r["name"] == "Canon Katta")
+    last = datetime.fromisoformat(canon["lastPrintedAt"])
+    assert abs(last - (NOW - timedelta(minutes=119))) < timedelta(seconds=1)
+
+
 def test_replayed_old_job_does_not_move_the_current_ip(pg):
     send_jobs(pg, job(50, printerIp="192.168.20.200"))
     send_jobs(pg, job(1, printerIp="192.168.20.93"))

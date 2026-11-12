@@ -2,24 +2,12 @@
 import { computed, ref } from 'vue'
 import type { EmployeeStat } from '../api/types'
 import { usePeriodStore } from '../stores/period'
+import { periodLabel as formatPeriodLabel } from '../utils/period'
 import AppIcon from './AppIcon.vue'
+import EmployeePrintersDialog from './EmployeePrintersDialog.vue'
 import StatusBadge from './StatusBadge.vue'
 import UsageBar from './UsageBar.vue'
 
-const MONTH_NAMES = [
-  'Yanvar',
-  'Fevral',
-  'Mart',
-  'Aprel',
-  'May',
-  'Iyun',
-  'Iyul',
-  'Avgust',
-  'Sentyabr',
-  'Oktyabr',
-  'Noyabr',
-  'Dekabr',
-]
 
 const props = withDefaults(
   defineProps<{
@@ -51,11 +39,10 @@ const numberFormat = new Intl.NumberFormat('uz-UZ')
 const fmt = (n: number) => numberFormat.format(n)
 
 /** Masalan "3-chorak" yoki "Iyul" — kvota har davr uchun alohida saqlanadi. */
-const periodLabel = computed(() =>
-  periodStore.periodType === 'quarter'
-    ? `${periodStore.periodNo}-chorak`
-    : MONTH_NAMES[periodStore.periodNo - 1] ?? String(periodStore.periodNo),
-)
+const periodLabel = computed(() => formatPeriodLabel(periodStore.periodType, periodStore.periodNo))
+
+/** Ismi bosilgan xodim: uning printerlari oynada ko'rsatiladi. */
+const printersOf = ref<EmployeeStat | null>(null)
 
 const quotaColumnLabel = computed(() => `Norma (${periodLabel.value})`)
 
@@ -215,7 +202,14 @@ function confirmEdit(login: string) {
             <td class="col-num">{{ i + 1 }}</td>
 
             <td>
-              <div class="strong">{{ emp.fullName ?? emp.login }}</div>
+              <button
+                type="button"
+                class="name-link"
+                title="Qaysi printerlardan chop etganini ko'rish"
+                @click="printersOf = emp"
+              >
+                {{ emp.fullName ?? emp.login }}
+              </button>
               <div class="muted">{{ emp.login }}<template v-if="emp.position"> · {{ emp.position }}</template></div>
               <!-- Biriktirilgan xodim: varaqlari kimning hisobida ko'rinishi -->
               <div v-if="emp.chargedTo" class="linked-note">
@@ -363,6 +357,8 @@ function confirmEdit(login: string) {
         </template>
       </span>
     </footer>
+
+    <EmployeePrintersDialog v-if="printersOf" :employee="printersOf" @close="printersOf = null" />
   </section>
 </template>
 
@@ -388,6 +384,26 @@ function confirmEdit(login: string) {
   align-items: center;
   justify-content: center;
   gap: 2px;
+}
+
+/* Xodim ismi: bosilganda printerlari oynasi ochiladi */
+.name-link {
+  display: block;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--color-text);
+  font: inherit;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
+.name-link:hover,
+.name-link:focus-visible {
+  color: var(--color-accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 
 /* Biriktirilgan xodim qatoridagi eslatma */

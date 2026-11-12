@@ -1,23 +1,9 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { usePeriodStore } from '../stores/period'
+import { MONTH_NAMES } from '../utils/period'
 
 const store = usePeriodStore()
-
-const MONTH_NAMES = [
-  'Yanvar',
-  'Fevral',
-  'Mart',
-  'Aprel',
-  'May',
-  'Iyun',
-  'Iyul',
-  'Avgust',
-  'Sentyabr',
-  'Oktyabr',
-  'Noyabr',
-  'Dekabr',
-]
 
 const years = computed(() => {
   const current = new Date().getFullYear()

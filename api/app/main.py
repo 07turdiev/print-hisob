@@ -236,6 +236,7 @@ def _printer_usage_subquery(*filters):
                 func.max(PrintJob.printer_mac).label("mac"),
                 func.max(PrintJob.printer).label("raw_name"),
                 func.max(PrintJob.printer_ip).label("printer_ip"),
+                func.max(PrintJob.printed_at).label("last_printed_at"),
                 func.coalesce(func.sum(PrintJob.pages), 0).label("pages"),
                 func.count().label("jobs"),
                 func.coalesce(
@@ -1377,10 +1378,18 @@ async def stats_top(
 async def stats_printers(
     session: AsyncSession = Depends(get_session),
     period: Period = Depends(period_params),
+    user: str | None = Query(
+        default=None,
+        description=(
+            "Faqat shu xodimning chop etishlari. Login har qanday yozilishda qabul "
+            "qilinadi (`MADANIYAT\\ali`, `Ali`). Biriktirilgan xodimlarniki qo'shilmaydi."
+        ),
+    ),
 ) -> list[PrinterStatOut]:
     """`/api/stats/top`dagi "eng ko'p N ta printer"dan farqli o'laroq, davrda
     ishlatilgan **barcha** printerlarni (muvaffaqiyat foizi va xatolar soni bilan
-    birga) qaytaradi — printerlar sahifasi uchun.
+    birga) qaytaradi — printerlar sahifasi uchun. `user` berilsa, xodim oynasi
+    uchun faqat shu xodim ishlatgan printerlar qaytadi.
 
     Guruhlash `printer_mac` bo'yicha (mac bo'lmasa xom printer nomi bo'yicha)
     amalga oshiriladi — bir xil jismoniy printer turli kompyuterlarda turlicha
@@ -1388,11 +1397,14 @@ async def stats_printers(
     reyestrdagi qulay nom (agar admin belgilagan bo'lsa), aks holda so'nggi
     ko'rilgan drayver nomi, aks holda hodisadagi xom nom, aks holda mac.
     """
-    usage = _printer_usage_subquery(
+    filters = [
         PrintJob.printed_at >= period.start,
         PrintJob.printed_at < period.end,
         counted_job(),
-    )
+    ]
+    if user:
+        filters.append(login_key(PrintJob.user_name) == normalize_login(user))
+    usage = _printer_usage_subquery(*filters)
     stmt = (
         select(
             usage.c.device_id,
@@ -1403,6 +1415,7 @@ async def stats_printers(
             usage.c.success_jobs,
             usage.c.failed_jobs,
             func.coalesce(PrinterDevice.last_ip, usage.c.printer_ip).label("last_ip"),
+            usage.c.last_printed_at,
         )
         .select_from(usage)
         .outerjoin(PrinterDevice, PrinterDevice.id == usage.c.device_id)
@@ -1425,6 +1438,7 @@ async def stats_printers(
                 success_rate=round(success_rate, 4),
                 failed_jobs=row.failed_jobs or 0,
                 last_ip=row.last_ip,
+                last_printed_at=row.last_printed_at,
             )
         )
     return results

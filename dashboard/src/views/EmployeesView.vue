@@ -69,8 +69,9 @@ function handleSave(login: string, allocatedPages: number) {
       <span>
         Norma faqat tanlangan davr uchun saqlanadi. Normasi belgilanmagan xodimlarga standart
         <strong>{{ defaultQuota }}</strong> varaq qo'llaniladi. Normani o'zgartirish uchun jadvaldagi
-        qiymat ustiga bosing. Holat ustunida: Bloklangan xodim umuman chop eta olmaydi, Istisno
-        xodimning umumiy printerlardan tashqari ham ruxsati bor.
+        qiymat ustiga bosing. Xodim ismi ustiga bossangiz, u qaysi printerlardan chop etgani
+        ko'rinadi. Holat ustunida: Bloklangan xodim umuman chop eta olmaydi, Istisno xodimning
+        umumiy printerlardan tashqari ham ruxsati bor.
       </span>
     </p>
 

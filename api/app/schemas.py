@@ -491,6 +491,7 @@ class PrinterStatOut(BaseModel):
                     "successRate": 0.98,
                     "failedJobs": 6,
                     "lastIp": "192.168.1.50",
+                    "lastPrintedAt": "2026-11-11T09:42:00+05:00",
                 }
             ]
         }
@@ -516,6 +517,11 @@ class PrinterStatOut(BaseModel):
     success_rate: float = Field(serialization_alias="successRate")
     failed_jobs: int = Field(serialization_alias="failedJobs")
     last_ip: str | None = Field(default=None, serialization_alias="lastIp")
+    last_printed_at: datetime | None = Field(
+        default=None,
+        serialization_alias="lastPrintedAt",
+        description="Davr ichida shu printerga yuborilgan oxirgi ish vaqti",
+    )
 
 
 # ---------------------------------------------------------------------------

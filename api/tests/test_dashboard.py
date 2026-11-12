@@ -32,6 +32,15 @@ def test_stats_printers_builds_without_error(client):
     assert r.json() == []
 
 
+def test_stats_printers_filters_by_normalized_login(client):
+    from conftest import CAPTURED
+
+    r = client.get("/api/stats/printers", params=PERIOD | {"user": "MADANIYAT\\Ali.Valiyev"})
+    assert r.status_code == 200
+    assert r.json() == []
+    assert any("ali.valiyev" in params.values() for params in CAPTURED)
+
+
 def test_stats_departments_builds_without_error(client):
     r = client.get("/api/stats/departments", params=PERIOD)
     assert r.status_code == 200

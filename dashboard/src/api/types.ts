@@ -156,6 +156,8 @@ export interface PrinterStat {
   successRate: number
   failedJobs: number
   lastIp: string | null
+  /** Davr ichida shu printerga yuborilgan oxirgi ish vaqti (ISO-8601). */
+  lastPrintedAt: string | null
 }
 
 /** Printerni tanib olish uchun nishon. */

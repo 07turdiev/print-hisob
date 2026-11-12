@@ -31,6 +31,7 @@ import type {
   UserOverride,
   UserOverrideInput,
 } from './types'
+import { periodLabel } from '../utils/period'
 
 const BASE_URL = (import.meta.env.VITE_API_BASE ?? 'http://localhost:8000').replace(/\/$/, '')
 
@@ -171,8 +172,9 @@ export function getFailures(params: PeriodParams): Promise<FailureReason[]> {
   return request<FailureReason[]>('/api/stats/failures', { query: periodQuery(params) })
 }
 
-export function getPrinterStats(params: PeriodParams): Promise<PrinterStat[]> {
-  return request<PrinterStat[]>('/api/stats/printers', { query: periodQuery(params) })
+/** `user` berilsa, faqat shu xodim ishlatgan printerlar qaytadi. */
+export function getPrinterStats(params: PeriodParams, user?: string): Promise<PrinterStat[]> {
+  return request<PrinterStat[]>('/api/stats/printers', { query: { ...periodQuery(params), user } })
 }
 
 // --- Printers registry (MAC-keyed) ---------------------------------------
@@ -249,16 +251,9 @@ export function getDepartmentStats(params: PeriodParams): Promise<DepartmentStat
   return request<DepartmentStat[]>('/api/stats/departments', { query: periodQuery(params) })
 }
 
-/** Uzbek month names used only as a filename fallback if the server omits Content-Disposition. */
-const UZ_MONTH_NAMES = [
-  'Yanvar', 'Fevral', 'Mart', 'Aprel', 'May', 'Iyun',
-  'Iyul', 'Avgust', 'Sentyabr', 'Oktyabr', 'Noyabr', 'Dekabr',
-]
-
+/** Filename fallback if the server omits Content-Disposition. */
 function fallbackPeriodLabel(params: PeriodParams): string {
-  return params.periodType === 'quarter'
-    ? `${params.periodNo}-chorak`
-    : UZ_MONTH_NAMES[params.periodNo - 1] ?? String(params.periodNo)
+  return periodLabel(params.periodType, params.periodNo)
 }
 
 /** Extracts the filename from a `Content-Disposition` header, preferring the UTF-8 form. */

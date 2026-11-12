@@ -1,4 +1,5 @@
 import { computed, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { ApiError, getEmployees, getPrintJobs } from '../api/client'
 import type { Employee, MatchStatus, PrintJob } from '../api/types'
 
@@ -6,12 +7,17 @@ export type SuccessFilter = '' | 'true' | 'false'
 
 /** Drives the Chop etishlar jurnali page: filterable, paginated /api/print-jobs listing. */
 export function useJournalPage() {
+  // Boshqa sahifadan havola bilan ochilganda (masalan xodim printerlari oynasidan)
+  // filtrlar havoladagi `user`, `since`, `until` bilan to'ldiriladi.
+  const query = useRoute().query
+  const fromQuery = (key: string) => (typeof query[key] === 'string' ? (query[key] as string) : '')
+
   const computer = ref('')
-  const user = ref('')
+  const user = ref(fromQuery('user'))
   const printer = ref('')
   const success = ref<SuccessFilter>('')
-  const since = ref('')
-  const until = ref('')
+  const since = ref(fromQuery('since'))
+  const until = ref(fromQuery('until'))
 
   const page = ref(1)
   const pageSize = ref(25)
