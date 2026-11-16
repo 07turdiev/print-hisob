@@ -62,6 +62,10 @@ Ichki xizmatlar portali uchun (`X-Portal-Key`, faqat portal serveridan). Hujjat:
 |-------|------|----------|
 | `GET` | `/api/portal/v1/employees/{login}/printing` | Xodimning normasi, printer ruxsati va sarfi |
 | `GET` | `/api/portal/v1/employees/{login}/jobs` | Xodimning chop etishlari |
+| `GET` | `/api/portal/v1/employees/{login}/history` | So'nggi davrlar normasi va sarfi |
+| `GET` | `/api/portal/v1/periods` | Davr tanlash chegaralari |
+| `GET` | `/api/portal/v1/departments` | Bo'limlar kesimi (rahbariyat uchun, yig'ma raqamlar) |
+| `GET` | `/api/portal/v1/departments/{department}/employees` | Bo'lim xodimlari (rahbariyat uchun) |
 
 `PORTAL_API_KEY` bo'sh bo'lsa portal endpointlari yopiq turadi (503): ular xodimning
 shaxsiy ma'lumotini beradi.

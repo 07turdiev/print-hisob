@@ -1257,6 +1257,20 @@ class PortalPeriodOut(BaseModel):
     label: str = Field(description="Masalan `2026-yil, 4-chorak` yoki `2026-yil, Noyabr`")
     start: datetime = Field(description="Davr boshi (kiradi)")
     end: datetime = Field(description="Davr oxiri (kirmaydi)")
+    is_current: bool = Field(serialization_alias="isCurrent", description="Hozirgi davrmi")
+
+
+class PortalEmployeeRefOut(BaseModel):
+    """Boshqa xodimga havola: biriktirish ro'yxatlari uchun."""
+
+    login: str
+    full_name: str | None = Field(serialization_alias="fullName")
+    status: Literal["active", "inactive", "unknown"]
+
+
+class PortalLinkedLoginOut(PortalEmployeeRefOut):
+    pages: int = Field(description="Davrda hisobga kiradigan varaqlar")
+    jobs: int = Field(description="Davrda hisobga kiradigan ishlar")
 
 
 class PortalQuotaOut(BaseModel):
@@ -1285,6 +1299,17 @@ class PortalQuotaOut(BaseModel):
     charged_to: str | None = Field(
         serialization_alias="chargedTo",
         description="Bu xodimning varaqlari qo'shimcha ravishda kimning hisobida ko'rinadi",
+    )
+    allocated_source: Literal["explicit", "default"] = Field(
+        serialization_alias="allocatedSource",
+        description="`explicit`: normani admin belgilagan, `default`: standart norma",
+    )
+    linked: list[PortalLinkedLoginOut] = Field(
+        description="Biriktirilgan loginlar va ularning shu davrdagi sarfi (0 bo'lsa ham)"
+    )
+    charged_to_employee: PortalEmployeeRefOut | None = Field(
+        serialization_alias="chargedToEmployee",
+        description="Bu xodim kimga biriktirilgan, biriktirilmagan bo'lsa `null`",
     )
 
 
@@ -1349,4 +1374,83 @@ class PortalJobOut(BaseModel):
     reason: str | None
     counted: bool = Field(
         description="Normaga kiradimi. PDF kabi virtual printer va bekor qilingan ishlar kirmaydi"
+    )
+
+
+class PortalHistoryItemOut(BaseModel):
+    """Bitta davr: raqamlar shu davr uchun `/printing` dagi `quota` bilan bir xil."""
+
+    period: PortalPeriodOut
+    allocated: int
+    used: int
+    used_from_linked: int = Field(serialization_alias="usedFromLinked")
+    used_total: int = Field(serialization_alias="usedTotal")
+    remaining: int
+    percent: float | None
+    over_limit: bool = Field(serialization_alias="overLimit")
+    is_default: bool = Field(serialization_alias="isDefault")
+
+
+class PortalPeriodChoiceOut(BaseModel):
+    quarter: PortalPeriodOut
+    month: PortalPeriodOut
+
+
+class PortalPeriodsOut(BaseModel):
+    default_period_type: PeriodType = Field(
+        serialization_alias="defaultPeriodType",
+        description="Davr berilmaganda olinadigan tur (agentlar hisoblaydigan davr)",
+    )
+    current: PortalPeriodChoiceOut = Field(description="Joriy chorak va joriy oy")
+    earliest: PortalPeriodChoiceOut | None = Field(
+        description="Hisobga kiradigan birinchi ish bo'lgan chorak va oy. Tarix bo'sh bo'lsa `null`"
+    )
+
+
+class PortalDepartmentOut(BaseModel):
+    department: str | None = Field(
+        description="Bo'lim nomi (URL uchun). Bo'limi aniqlanmagan sarf qatorida `null`"
+    )
+    name: str = Field(description="Ko'rsatish uchun nom")
+    employee_count: int | None = Field(
+        serialization_alias="employeeCount", description="Faqat faol xodimlar soni"
+    )
+    allocated: int | None = Field(description="Faol xodimlar normalari yig'indisi")
+    used: int = Field(description="Haqiqiy qog'oz sarfi, biriktirishlar ikki marta sanalmaydi")
+    jobs: int
+    percent: float | None = Field(description="`used / allocated * 100`")
+    over_limit_count: int | None = Field(
+        serialization_alias="overLimitCount", description="Normadan oshgan xodimlar soni"
+    )
+
+
+class PortalDepartmentsOut(BaseModel):
+    period: PortalPeriodOut
+    departments: list[PortalDepartmentOut] = Field(
+        description="Bo'limlar sarf bo'yicha kamayish tartibida, oxirida bo'limi aniqlanmagan sarf"
+    )
+    total_used: int = Field(
+        serialization_alias="totalUsed", description="Davrning umumiy sarfi (barcha qatorlar yig'indisi)"
+    )
+    total_jobs: int = Field(serialization_alias="totalJobs")
+
+
+class PortalDepartmentEmployeeOut(BaseModel):
+    login: str
+    full_name: str | None = Field(serialization_alias="fullName")
+    status: Literal["active", "inactive"]
+    allocated: int
+    used: int
+    used_from_linked: int = Field(serialization_alias="usedFromLinked")
+    used_total: int = Field(serialization_alias="usedTotal")
+    percent: float | None
+    over_limit: bool = Field(serialization_alias="overLimit")
+    blocked: bool
+
+
+class PortalDepartmentEmployeesOut(BaseModel):
+    period: PortalPeriodOut
+    department: str
+    employees: list[PortalDepartmentEmployeeOut] = Field(
+        description="Faol xodimlar va davrda chop etgan ketgan xodimlar, `usedTotal` bo'yicha kamayish tartibida"
     )

@@ -12,7 +12,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth import PORTAL_UNAUTHORIZED_RESPONSE, require_portal_key
 from app.db import get_session
 from app.periods import Period, PeriodType, current_period, period_bounds
-from app.schemas import PortalJobOut, PortalPrintingOut
+from app.schemas import (
+    PortalDepartmentEmployeesOut,
+    PortalDepartmentsOut,
+    PortalHistoryItemOut,
+    PortalJobOut,
+    PortalPeriodsOut,
+    PortalPrintingOut,
+)
 from app.services import portal
 from app.services.quota_sync import agent_period_type
 
@@ -23,6 +30,7 @@ router = APIRouter(
 )
 
 _NOT_FOUND = {404: {"description": "Bunday xodim AD'da ham, chop etish tarixida ham yo'q"}}
+_DEPARTMENT_NOT_FOUND = {404: {"description": "Bunday bo'lim AD'da yo'q"}}
 
 LoginPath = Path(
     min_length=1,
@@ -95,3 +103,73 @@ async def employee_jobs(
     )
     response.headers["X-Total-Count"] = str(total)
     return rows
+
+
+@router.get(
+    "/employees/{login}/history",
+    response_model=list[PortalHistoryItemOut],
+    summary="Xodimning so'nggi davrlardagi normasi va sarfi",
+    response_description="Joriy davr va undan oldingilari, eng yangisi birinchi",
+    responses={**PORTAL_UNAUTHORIZED_RESPONSE, **_NOT_FOUND},
+)
+async def employee_history(
+    login: str = LoginPath,
+    period_type: PeriodType | None = Query(
+        default=None, description="`quarter` yoki `month`. Berilmasa agentlar hisoblaydigan davr"
+    ),
+    count: int = Query(default=4, ge=1, le=12, description="Nechta davr, joriy davr bilan birga"),
+    session: AsyncSession = Depends(get_session),
+) -> list[PortalHistoryItemOut]:
+    """Har bir davr raqamlari shu davr uchun `/printing` dagi `quota` bilan bir xil.
+
+    Biriktirish hozirgi holat bo'yicha barcha davrlarga qo'llanadi.
+    """
+    return await portal.history(session, login, period_type or agent_period_type(), count)
+
+
+@router.get(
+    "/periods",
+    response_model=PortalPeriodsOut,
+    summary="Davr tanlash uchun chegaralar",
+    responses=PORTAL_UNAUTHORIZED_RESPONSE,
+)
+async def available_periods(session: AsyncSession = Depends(get_session)) -> PortalPeriodsOut:
+    """Joriy chorak va oy hamda chop etish tarixidagi birinchi chorak va oy."""
+    return await portal.periods(session)
+
+
+@router.get(
+    "/departments",
+    response_model=PortalDepartmentsOut,
+    summary="Bo'limlar kesimi (rahbariyat uchun)",
+    responses=PORTAL_UNAUTHORIZED_RESPONSE,
+)
+async def departments_summary(
+    period: Period = Depends(portal_period),
+    session: AsyncSession = Depends(get_session),
+) -> PortalDepartmentsOut:
+    """Faqat yig'ma raqamlar. Kimga ko'rsatishni portal hal qiladi.
+
+    Oxirgi qator (`department: null`) AD'da yo'q yoki bo'limi bo'sh loginlarning
+    sarfi. Barcha qatorlar yig'indisi davrning umumiy sarfiga teng.
+    """
+    return await portal.departments(session, period)
+
+
+@router.get(
+    "/departments/{department:path}/employees",
+    response_model=PortalDepartmentEmployeesOut,
+    summary="Bo'lim xodimlarining normasi va sarfi (rahbariyat uchun)",
+    responses={**PORTAL_UNAUTHORIZED_RESPONSE, **_DEPARTMENT_NOT_FOUND},
+)
+async def department_employees(
+    department: str = Path(
+        min_length=1,
+        max_length=255,
+        description="Bo'lim nomi `/departments` javobidagi `department` dan, URL uchun kodlangan",
+    ),
+    period: Period = Depends(portal_period),
+    session: AsyncSession = Depends(get_session),
+) -> PortalDepartmentEmployeesOut:
+    """Hujjat, kompyuter va printer ma'lumoti qaytmaydi, faqat xodim raqamlari."""
+    return await portal.department_employees(session, department, period)

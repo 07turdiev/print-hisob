@@ -6,7 +6,7 @@ filtrlash SQL tomonda `printed_at >= start AND printed_at < end` ko'rinishida bo
 """
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Literal
 
 from app.config import settings
@@ -91,6 +91,30 @@ def current_period(period_type: PeriodType, now: datetime | None = None) -> Peri
     return Period(
         period_type=period_type, year=moment.year, period_no=period_no, start=start, end=end
     )
+
+
+def period_at(period_type: PeriodType, moment: datetime) -> Period:
+    """Berilgan payt tushadigan davr (davr chegaralari UTC bo'yicha)."""
+    return current_period(period_type, now=moment.astimezone(timezone.utc))
+
+
+def previous_period(period: Period) -> Period:
+    """Bevosita oldingi davr: 2026-yil 1-chorakdan oldin 2025-yil 4-chorak."""
+    return period_at(period.period_type, period.start - timedelta(microseconds=1))
+
+
+def recent_periods(period_type: PeriodType, count: int, now: datetime | None = None) -> list[Period]:
+    """Joriy davr va undan oldingi `count - 1` ta davr, eng yangisi birinchi."""
+    periods = [current_period(period_type, now)]
+    while len(periods) < count:
+        periods.append(previous_period(periods[-1]))
+    return periods
+
+
+def is_current(period: Period, now: datetime | None = None) -> bool:
+    """So'ralgan davr hozirgi davrmi."""
+    current = current_period(period.period_type, now)
+    return (period.year, period.period_no) == (current.year, current.period_no)
 
 
 def period_key(period_type: PeriodType, year: int, period_no: int) -> str:

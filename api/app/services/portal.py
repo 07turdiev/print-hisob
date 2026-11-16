@@ -4,6 +4,7 @@ Portal serveri xodimni o'zi tanib oladi (AD orqali kirish) va bizga uning
 loginini `X-Portal-Key` bilan yuboradi. Biz kim so'rayotganini tekshirmaymiz,
 faqat kalitni. Shuning uchun portal faqat kirgan xodimning o'z loginini
 yuborishi shart, aks holda bir xodim boshqasining ma'lumotini ko'rib qoladi.
+Rahbariyat uchun bo'limlar kesimini kimga ko'rsatishni ham portal hal qiladi.
 
 Raqamlar dashboard bilan bir manbadan olinadi (`app.services.reports`):
 portaldagi "ishlatildi 356 varaq" dashboarddagi son bilan bir xil bo'ladi.
@@ -13,10 +14,12 @@ faqat admin bloklashi to'xtatadi (`access.canPrint = false`), printer
 cheklovi esa qaysi printerlardan chop etish mumkinligini belgilaydi.
 """
 
+from collections import Counter
+from collections.abc import Sequence
 from datetime import datetime, timezone
 
 from fastapi import HTTPException, status
-from sqlalchemy import func, select
+from sqlalchemy import func, select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.logins import login_key, normalize_login
@@ -30,14 +33,33 @@ from app.models import (
     PrintJob,
     PrintUserOverride,
 )
-from app.periods import Period, default_quota_for, period_label
+from app.periods import (
+    Period,
+    PeriodType,
+    current_period,
+    default_quota_for,
+    is_current,
+    period_at,
+    period_label,
+    recent_periods,
+)
 from app.rules import counted_job
 from app.schemas import (
+    EmployeeStatOut,
     PortalAccessOut,
     PortalDayOut,
+    PortalDepartmentEmployeeOut,
+    PortalDepartmentEmployeesOut,
+    PortalDepartmentOut,
+    PortalDepartmentsOut,
     PortalEmployeeOut,
+    PortalEmployeeRefOut,
+    PortalHistoryItemOut,
     PortalJobOut,
+    PortalLinkedLoginOut,
+    PortalPeriodChoiceOut,
     PortalPeriodOut,
+    PortalPeriodsOut,
     PortalPrinterOut,
     PortalPrinterUsageOut,
     PortalPrintingOut,
@@ -45,6 +67,10 @@ from app.schemas import (
 )
 from app.services import printer_groups, reports
 from app.services import printers as printer_registry
+from app.services.quota_sync import agent_period_type
+
+# Bo'limi aniqlanmagan sarf qatorining nomi (`department: null`).
+UNASSIGNED_DEPARTMENT_LABEL = "Bo'limi aniqlanmagan"
 
 # ---------------------------------------------------------------------------
 # Xodimni topish
@@ -76,6 +102,12 @@ async def _resolve(session: AsyncSession, login: str) -> tuple[str, Employee | N
     raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Xodim topilmadi")
 
 
+def _status(employee: Employee | None) -> str:
+    if employee is None:
+        return "unknown"
+    return "active" if employee.is_active else "inactive"
+
+
 def _employee_out(key: str, employee: Employee | None) -> PortalEmployeeOut:
     if employee is None:
         return PortalEmployeeOut(
@@ -86,8 +118,21 @@ def _employee_out(key: str, employee: Employee | None) -> PortalEmployeeOut:
         full_name=employee.full_name,
         department=employee.department,
         position=employee.position,
-        status="active" if employee.is_active else "inactive",
+        status=_status(employee),
     )
+
+
+async def _employees_by_key(session: AsyncSession, logins: Sequence[str]) -> dict[str, Employee]:
+    """AD yozuvlari normallashtirilgan login bo'yicha, bitta so'rovda."""
+    keys = sorted({normalize_login(login) for login in logins if login})
+    if not keys:
+        return {}
+    rows = (
+        (await session.execute(select(Employee).where(login_key(Employee.login).in_(keys))))
+        .scalars()
+        .all()
+    )
+    return {normalize_login(e.login): e for e in rows}
 
 
 def _period_out(period: Period) -> PortalPeriodOut:
@@ -98,7 +143,12 @@ def _period_out(period: Period) -> PortalPeriodOut:
         label=f"{period.year}-yil, {period_label(period.period_type, period.period_no)}",
         start=period.start,
         end=period.end,
+        is_current=is_current(period),
     )
+
+
+def _percent(used: int, allocated: int | None) -> float | None:
+    return round(used / allocated * 100, 1) if allocated else None
 
 
 # ---------------------------------------------------------------------------
@@ -106,23 +156,50 @@ def _period_out(period: Period) -> PortalPeriodOut:
 # ---------------------------------------------------------------------------
 
 
+async def _explicit_quotas(
+    session: AsyncSession, key: str, periods: Sequence[Period]
+) -> dict[tuple[int, int], int]:
+    """Admin alohida belgilagan normalar: `{(yil, davr): varaq}`, bitta so'rovda."""
+    if not periods:
+        return {}
+    rows = await session.execute(
+        select(EmployeeQuota.year, EmployeeQuota.period_no, EmployeeQuota.allocated_pages).where(
+            EmployeeQuota.login == key,
+            EmployeeQuota.period_type == periods[0].period_type,
+            tuple_(EmployeeQuota.year, EmployeeQuota.period_no).in_(
+                [(p.year, p.period_no) for p in periods]
+            ),
+        )
+    )
+    return {(year, period_no): pages for year, period_no, pages in rows.all()}
+
+
+def _quota_numbers(period: Period, row: EmployeeStatOut | None, explicit: int | None) -> dict:
+    """Bitta davrning norma raqamlari. `/printing` ham, `/history` ham shundan oladi."""
+    allocated = explicit if explicit is not None else default_quota_for(period.period_type)
+    used = row.used if row else 0
+    used_from_linked = row.used_from_linked if row else 0
+    used_total = used + used_from_linked
+    return {
+        "allocated": allocated,
+        "used": used,
+        "used_from_linked": used_from_linked,
+        "used_total": used_total,
+        "remaining": allocated - used_total,
+        "percent": _percent(used_total, allocated),
+        "over_limit": used_total > allocated,
+        "is_default": explicit is None,
+    }
+
+
 async def _quota(
     session: AsyncSession, key: str, period: Period, override: PrintUserOverride | None
 ) -> PortalQuotaOut:
     rows = await reports.employee_stats(session, period, login=key)
-    row = rows[0] if rows else None
-
-    explicit = (
-        await session.execute(
-            select(EmployeeQuota.allocated_pages).where(
-                EmployeeQuota.login == key,
-                EmployeeQuota.period_type == period.period_type,
-                EmployeeQuota.year == period.year,
-                EmployeeQuota.period_no == period.period_no,
-            )
-        )
-    ).scalar_one_or_none()
-    allocated = explicit if explicit is not None else default_quota_for(period.period_type)
+    explicit = await _explicit_quotas(session, key, [period])
+    numbers = _quota_numbers(
+        period, rows[0] if rows else None, explicit.get((period.year, period.period_no))
+    )
 
     linked_logins = sorted(
         (
@@ -133,21 +210,213 @@ async def _quota(
         .scalars()
         .all()
     )
+    charged_to = override.charge_to_login if override else None
+    usage = await reports.usage_by_login(session, period, linked_logins)
+    employees = await _employees_by_key(session, [*linked_logins, *([charged_to] if charged_to else [])])
 
-    used = row.used if row else 0
-    used_from_linked = row.used_from_linked if row else 0
-    used_total = used + used_from_linked
+    def ref(login: str) -> dict:
+        employee = employees.get(login)
+        return {
+            "login": login,
+            "full_name": employee.full_name if employee else None,
+            "status": _status(employee),
+        }
+
     return PortalQuotaOut(
-        allocated=allocated,
-        used=used,
-        used_from_linked=used_from_linked,
-        used_total=used_total,
-        remaining=allocated - used_total,
-        percent=round(used_total / allocated * 100, 1) if allocated > 0 else None,
-        over_limit=used_total > allocated,
-        is_default=explicit is None,
+        **numbers,
+        allocated_source="default" if numbers["is_default"] else "explicit",
         linked_logins=linked_logins,
-        charged_to=override.charge_to_login if override else None,
+        charged_to=charged_to,
+        linked=[
+            PortalLinkedLoginOut(
+                **ref(login), pages=usage.get(login, (0, 0))[0], jobs=usage.get(login, (0, 0))[1]
+            )
+            for login in linked_logins
+        ],
+        charged_to_employee=PortalEmployeeRefOut(**ref(charged_to)) if charged_to else None,
+    )
+
+
+async def history(
+    session: AsyncSession, login: str, period_type: PeriodType, count: int
+) -> list[PortalHistoryItemOut]:
+    """Joriy davr va undan oldingilari, eng yangisi birinchi.
+
+    So'rovlar soni `count` ga bog'liq emas: sarf bitta so'rovda
+    (`reports.employee_stats_by_period`), normalar bitta so'rovda olinadi.
+    """
+    key, _ = await _resolve(session, login)
+    periods = recent_periods(period_type, count)
+    rows = await reports.employee_stats_by_period(session, periods, login=key)
+    explicit = await _explicit_quotas(session, key, periods)
+    return [
+        PortalHistoryItemOut(
+            period=_period_out(period),
+            **_quota_numbers(
+                period,
+                period_rows[0] if period_rows else None,
+                explicit.get((period.year, period.period_no)),
+            ),
+        )
+        for period, period_rows in zip(periods, rows)
+    ]
+
+
+async def periods(session: AsyncSession) -> PortalPeriodsOut:
+    """Davr tanlash ro'yxati chegaralari: joriy davr va tarixdagi birinchi davr."""
+    first = (
+        await session.execute(select(func.min(PrintJob.printed_at)).where(counted_job()))
+    ).scalar()
+    return PortalPeriodsOut(
+        default_period_type=agent_period_type(),
+        current=PortalPeriodChoiceOut(
+            quarter=_period_out(current_period("quarter")),
+            month=_period_out(current_period("month")),
+        ),
+        earliest=None
+        if first is None
+        else PortalPeriodChoiceOut(
+            quarter=_period_out(period_at("quarter", first)),
+            month=_period_out(period_at("month", first)),
+        ),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Bo'limlar kesimi (rahbariyat uchun, faqat yig'ma raqamlar)
+# ---------------------------------------------------------------------------
+
+
+async def departments(session: AsyncSession, period: Period) -> PortalDepartmentsOut:
+    """Bo'limlar va bo'limi aniqlanmagan sarf. Yig'indisi davrning umumiy sarfiga teng.
+
+    `used` haqiqiy qog'oz: har bir ish chop etgan xodimning bo'limida bir marta
+    sanaladi. `overLimitCount` esa xodim darajasida, `usedTotal > norma` bo'yicha.
+    """
+    rollup = await reports.department_rollup(session, period)
+    stats = await reports.employee_stats(session, period)
+    over_limit = Counter(row.department for row in stats if row.department and row.over_limit)
+    unassigned_pages, unassigned_jobs = await reports.unassigned_usage(session, period)
+
+    rows = [
+        PortalDepartmentOut(
+            department=d.name,
+            name=d.name,
+            employee_count=d.employee_count,
+            allocated=d.total_allocated,
+            used=d.pages,
+            jobs=d.jobs,
+            percent=_percent(d.pages, d.total_allocated),
+            over_limit_count=over_limit.get(d.name, 0),
+        )
+        for d in rollup
+    ]
+    rows.append(
+        PortalDepartmentOut(
+            department=None,
+            name=UNASSIGNED_DEPARTMENT_LABEL,
+            employee_count=None,
+            allocated=None,
+            used=unassigned_pages,
+            jobs=unassigned_jobs,
+            percent=None,
+            over_limit_count=None,
+        )
+    )
+    return PortalDepartmentsOut(
+        period=_period_out(period),
+        departments=rows,
+        total_used=sum(r.used for r in rows),
+        total_jobs=sum(r.jobs for r in rows),
+    )
+
+
+async def department_employees(
+    session: AsyncSession, department: str, period: Period
+) -> PortalDepartmentEmployeesOut:
+    """Bo'limning faol xodimlari va davrda chop etgan ketgan xodimlari.
+
+    Ularning `used` yig'indisi `/departments` dagi shu bo'lim `used` iga teng.
+    """
+    members = (
+        (await session.execute(select(Employee).where(Employee.department == department)))
+        .scalars()
+        .all()
+    )
+    if not members:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Bo'lim topilmadi")
+
+    stats = await reports.employee_stats(session, period, department)
+    with_usage = {normalize_login(row.login) for row in stats}
+    idle = [e for e in members if e.is_active and normalize_login(e.login) not in with_usage]
+    idle_keys = [normalize_login(e.login) for e in idle]
+
+    explicit: dict[str, int] = {}
+    blocked: set[str] = set()
+    if idle_keys:
+        explicit = dict(
+            (
+                await session.execute(
+                    select(EmployeeQuota.login, EmployeeQuota.allocated_pages).where(
+                        EmployeeQuota.login.in_(idle_keys),
+                        EmployeeQuota.period_type == period.period_type,
+                        EmployeeQuota.year == period.year,
+                        EmployeeQuota.period_no == period.period_no,
+                    )
+                )
+            ).all()
+        )
+        blocked = set(
+            (
+                await session.execute(
+                    select(PrintUserOverride.login).where(
+                        PrintUserOverride.login.in_(idle_keys), PrintUserOverride.blocked.is_(True)
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+
+    # Statistikadagi login chop etish yozuvidagi ko'rinishda (`MADANIYAT\Ali`),
+    # ro'yxatda esa AD'dagi login ko'rsatiladi.
+    member_login = {normalize_login(e.login): e.login for e in members}
+    rows = [
+        PortalDepartmentEmployeeOut(
+            login=member_login.get(normalize_login(row.login), normalize_login(row.login)),
+            full_name=row.full_name,
+            status="active" if row.match_status == "active" else "inactive",
+            allocated=row.allocated,
+            used=row.used,
+            used_from_linked=row.used_from_linked,
+            used_total=row.used_total,
+            percent=_percent(row.used_total, row.allocated),
+            over_limit=row.over_limit,
+            blocked=row.blocked,
+        )
+        for row in stats
+    ]
+    default_allocated = default_quota_for(period.period_type)
+    for employee in idle:
+        key = normalize_login(employee.login)
+        allocated = explicit.get(key, default_allocated)
+        rows.append(
+            PortalDepartmentEmployeeOut(
+                login=employee.login,
+                full_name=employee.full_name,
+                status="active",
+                allocated=allocated,
+                used=0,
+                used_from_linked=0,
+                used_total=0,
+                percent=_percent(0, allocated),
+                over_limit=0 > allocated,
+                blocked=key in blocked,
+            )
+        )
+    rows.sort(key=lambda r: (-r.used_total, (r.full_name or r.login).lower()))
+    return PortalDepartmentEmployeesOut(
+        period=_period_out(period), department=department, employees=rows
     )
 
 

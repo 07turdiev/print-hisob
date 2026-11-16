@@ -32,7 +32,7 @@ from app.models import (
     PrinterDevice,
     PrintJob,
 )
-from app.periods import Period, PeriodType, default_quota_for, period_bounds, period_label
+from app.periods import Period, PeriodType, default_quota_for, period_label
 from app.routers import (
     portal as portal_router,
     print_quotas,
@@ -62,8 +62,6 @@ from app.schemas import (
     LoginOut,
     PrintJobBatch,
     PrintJobOut,
-    PrinterNameIn,
-    PrinterOut,
     PrinterStatOut,
     StatsSummaryOut,
     TimeseriesPointOut,
@@ -281,8 +279,6 @@ async def ingest_print_jobs(
     received = len(batch.jobs)
     if received == 0:
         return IngestResult(computer=batch.computer, received=0, inserted=0, duplicates=0)
-
-    now = datetime.now(timezone.utc)
 
     # Paket ichidagi takrorlarni oldindan olib tashlaymiz.
     rows_by_key: dict[str, dict] = {}
@@ -1260,102 +1256,4 @@ async def stats_departments(
     Faqat chop etganlar emas — **barcha faol xodimlar** hisobga olinadi
     (`employeeCount`, `totalAllocated` shu tarzda to'g'ri chiqadi).
     """
-    return await _department_rollup(session, period)
-
-
-async def _department_rollup(session: AsyncSession, period: Period) -> list[DepartmentRollupOut]:
-    """`Employee.department` bo'yicha davr uchun to'liq agregatsiya: sahifalar/ishlar
-    (chop etilgan), faol xodimlar soni va kvotalar yig'indisi. Barcha agregatsiya
-    SQL tomonda amalga oshiriladi.
-    """
-    column = Employee.department
-    names = select(column.label("name")).where(column.isnot(None)).distinct().subquery()
-
-    employee_counts = (
-        select(column.label("name"), func.count().label("employee_count"))
-        .where(column.isnot(None), Employee.is_active.is_(True))
-        .group_by(column)
-        .subquery()
-    )
-
-    # Har bir faol xodim uchun shu davrga aniq kvota qatori bo'lmasa, standart
-    # kvota qo'llanadi (0 emas) — shuning uchun `Employee`dan boshlab
-    # `EmployeeQuota`ga outer join qilinadi (aksincha bo'lsa, kvota qatori
-    # yo'q xodimlar yig'indiga umuman kirmay qolar edi).
-    default_allocated = default_quota_for(period.period_type)
-    per_employee_quota = (
-        select(
-            column.label("name"),
-            func.coalesce(EmployeeQuota.allocated_pages, default_allocated).label("allocated"),
-        )
-        .select_from(Employee)
-        .outerjoin(
-            EmployeeQuota,
-            (EmployeeQuota.login == login_key(Employee.login))
-            & (EmployeeQuota.period_type == period.period_type)
-            & (EmployeeQuota.year == period.year)
-            & (EmployeeQuota.period_no == period.period_no),
-        )
-        .where(column.isnot(None), Employee.is_active.is_(True))
-        .subquery()
-    )
-
-    quota_totals = (
-        select(
-            per_employee_quota.c.name,
-            func.sum(per_employee_quota.c.allocated).label("total_allocated"),
-        )
-        .group_by(per_employee_quota.c.name)
-        .subquery()
-    )
-
-    pages_totals = (
-        select(
-            column.label("name"),
-            func.coalesce(func.sum(PrintJob.pages), 0).label("pages"),
-            func.count().label("jobs"),
-        )
-        .select_from(PrintJob)
-        .join(Employee, login_key(Employee.login) == login_key(PrintJob.user_name))
-        .where(
-            column.isnot(None),
-            PrintJob.printed_at >= period.start,
-            PrintJob.printed_at < period.end,
-            counted_job(),
-        )
-        .group_by(column)
-        .subquery()
-    )
-
-    stmt = (
-        select(
-            names.c.name,
-            func.coalesce(pages_totals.c.pages, 0).label("pages"),
-            func.coalesce(pages_totals.c.jobs, 0).label("jobs"),
-            func.coalesce(employee_counts.c.employee_count, 0).label("employee_count"),
-            func.coalesce(quota_totals.c.total_allocated, 0).label("total_allocated"),
-        )
-        .select_from(names)
-        .outerjoin(pages_totals, pages_totals.c.name == names.c.name)
-        .outerjoin(employee_counts, employee_counts.c.name == names.c.name)
-        .outerjoin(quota_totals, quota_totals.c.name == names.c.name)
-        .order_by(func.coalesce(pages_totals.c.pages, 0).desc())
-    )
-    rows = (await session.execute(stmt)).all()
-
-    results: list[DepartmentRollupOut] = []
-    for row in rows:
-        used = row.pages or 0
-        allocated = row.total_allocated or 0
-        results.append(
-            DepartmentRollupOut(
-                name=row.name,
-                pages=used,
-                jobs=row.jobs or 0,
-                employee_count=row.employee_count or 0,
-                total_allocated=allocated,
-                remaining=allocated - used,
-                over_limit=used > allocated,
-            )
-        )
-    return results
+    return await reports.department_rollup(session, period)
